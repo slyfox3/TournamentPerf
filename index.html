@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tournament Performance Calculator</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; background: #f5f5f5; }
+  h1 { margin-bottom: 5px; display: flex; align-items: center; justify-content: space-between; }
+  .subtitle { color: #666; margin-bottom: 20px; }
+  .input-section { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  label { display: block; font-weight: 600; margin-bottom: 5px; }
+  input[type="text"] { padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
+  button { color: white; border: none; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .hidden { display: none; }
+  #status { margin-top: 10px; padding: 10px; border-radius: 4px; }
+  .status-error { background: #fee2e2; color: #991b1b; }
+  table.progress-table { margin-top: 10px; background: transparent; box-shadow: none; border-radius: 0; overflow: visible; }
+  table.progress-table td { padding: 3px 12px 3px 0; border-bottom: none; font-size: 13px; }
+  .progress-label { color: #64748b; font-weight: 600; }
+  .progress-done { color: #166534; font-weight: 500; }
+  .progress-blocked { color: #9ca3af; font-style: italic; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #e2e8f0; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; }
+  .url-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+  .url-row input { flex: 1; }
+  .add-url-btn { width: 20px; height: 20px; padding: 0; font-size: 14px; line-height: 1; border-radius: 3px; margin-top: 4px; background: white; color: #9ca3af; border: 1px solid #d1d5db; position: relative; }
+  .add-url-btn:hover { color: #2563eb; border-color: #2563eb; background: #f0f4ff; }
+  .add-url-btn::after { content: 'Load more tournaments'; position: absolute; left: 28px; top: 50%; transform: translateY(-50%); background: #1e293b; color: white; font-size: 11px; padding: 3px 8px; border-radius: 4px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.15s; }
+  .add-url-btn:hover::after { opacity: 1; }
+  .remove-url-btn { width: 32px; height: 32px; padding: 0; font-size: 18px; line-height: 1; border-radius: 4px; background: #dc2626; flex-shrink: 0; margin-top: 0; }
+  .remove-url-btn:hover { background: #b91c1c; }
+  .slot-info { font-size: 12px; color: #475569; margin: -2px 0 6px 0; padding-left: 2px; }
+  .slot-error { font-size: 12px; color: #991b1b; margin: -2px 0 6px 0; padding-left: 2px; }
+  table { width: auto; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  th { background: #1e293b; color: white; text-align: left; padding: 10px 12px; font-size: 13px; cursor: pointer; user-select: none; }
+  th:hover { background: #334155; }
+  th .sort-arrow { font-size: 10px; margin-left: 4px; }
+  td { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 13px; }
+  tbody tr:last-child td { border-bottom: none; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.num { text-align: left; }
+  .delta-pos { color: #16a34a; font-weight: 600; }
+  .delta-neg { color: #dc2626; font-weight: 600; }
+  .no-prior { color: #9ca3af; font-style: italic; }
+  tr.player-row:hover td { background: #f0f4ff; }
+  tr.detail-row td { padding: 4px 12px 4px 36px; background: #fafbfc; border-bottom: 1px solid #e5e7eb; }
+  tr.detail-row:last-child td { border-bottom: none; }
+  .match-list { margin: 2px 0; font-size: 12px; line-height: 1.6; }
+  .match-win { color: #16a34a; }
+  .match-loss { color: #dc2626; }
+  .match-result { display: inline-block; width: 16px; font-weight: 700; }
+  .match-score { display: inline-block; width: 36px; font-variant-numeric: tabular-nums; }
+  .match-tournament { font-weight: 600; color: #475569; margin-top: 4px; font-size: 11px; }
+  .match-tournament:first-child { margin-top: 0; }
+  .debug-section { margin-top: 20px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .debug-section pre { font-size: 12px; overflow-x: auto; max-height: 300px; overflow-y: auto; background: #f8f8f8; padding: 10px; border-radius: 4px; }
+  .rating-input { width: 50px; padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px; font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+  .rating-input:focus { outline: 2px solid #2563eb; border-color: #2563eb; }
+  .rating-input::placeholder { color: #9ca3af; font-style: italic; }
+  .rating-input::-webkit-outer-spin-button,
+  .rating-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  td.name-cell { cursor: pointer; }
+  td.name-cell:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<h1>Tournament Performance Calculator
+  <a href="https://github.com/slyfox3/TournamentPerf" target="_blank">
+    <img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Repository">
+  </a>
+</h1>
+<p class="subtitle">Calculate player performance ratings from tournament results</p>
+
+<div class="input-section">
+  <label>Tournament URLs</label>
+  <div id="url-rows"></div>
+  <button class="add-url-btn" onclick="addUrlRow()">+</button>
+  <script>
+  // Start loading optimizer module immediately during HTML parsing
+  window._lmT0 = performance.now();
+  window._lmReady = import('https://esm.sh/ml-levenberg-marquardt@5.0.0/es2022/ml-levenberg-marquardt.mjs')
+    .then(function(mod) {
+      window._lm = mod.levenbergMarquardt;
+      window._lmLoadMs = Math.round(performance.now() - window._lmT0);
+    });
+
+  // Pre-fill URLs from query params
+  (function() {
+    var params = new URLSearchParams(window.location.search);
+    var vals = params.getAll('digitalpool');
+    if (vals.length > 0) {
+      window._autoLoadIdentifiers = vals;
+    }
+  })();
+  </script>
+  <div id="status" class="hidden"></div>
+  <table id="progress" class="progress-table hidden">
+    <tbody id="progress-body"></tbody>
+  </table>
+</div>
+
+<div id="results" class="hidden"></div>
+
+<div id="debug" class="hidden debug-section">
+  <span style="color: #2563eb; cursor: pointer; font-size: 13px;" onclick="toggleDebug()">Show/hide optimization details</span>
+  <pre id="debug-output" class="hidden"></pre>
+</div>
+
+<script src="digitalpool.js"></script>
+<script>
+(function() {
+'use strict';
+
+// Use the pre-started module import from inline script above
+var levenbergMarquardt = window._lm || null;
+var lmLoadMs = window._lmLoadMs || null;
+var lmReady = window._lmReady.then(function() {
+  levenbergMarquardt = window._lm;
+  lmLoadMs = window._lmLoadMs;
+});
+
+// Data source abstraction
+const dataSources = window.TournamentDataSources;
+
+function detectSource(url) {
+  for (const source of dataSources) {
+    if (source.matchesUrl(url)) return source;
+  }
+  return null;
+}
+
+function allSlotsFilled() {
+  return slots.length > 0 && slots.every(function(s) { return s.parsed != null; });
+}
+
+// =====================================================
+// Tournament Slots
+// =====================================================
+let slots = [];
+let nextSlotId = 0;
+let cachedParsedData = null; // aggregated data
+
+let cachedRows = [];
+let currentSort = { key: 'optimized', dir: -1 };
+let expandedPlayers = new Set();
+let manualRatings = new Map();
+
+// =====================================================
+// URL Row Management
+// =====================================================
+window.addUrlRow = function(value) {
+  const slotId = nextSlotId++;
+  const slot = { id: slotId, identifier: null, source: null, parsed: null, fetchMs: null, payloadSize: null };
+  slots.push(slot);
+
+  const container = document.getElementById('url-rows');
+  const row = document.createElement('div');
+  row.className = 'url-row';
+  row.dataset.slotId = slotId;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'url-input';
+  input.placeholder = dataSources.map(function(s) { return s.urlPlaceholder; }).join(' or ');
+
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'remove-url-btn';
+  removeBtn.textContent = '\u2212';
+  removeBtn.onclick = function() { window.removeUrlRow(slotId); };
+
+  removeBtn.style.display = 'none'; // hidden until slug is parsed
+
+  row.appendChild(input);
+  row.appendChild(removeBtn);
+  container.appendChild(row);
+
+  // Summary/error line below this row
+  const infoDiv = document.createElement('div');
+  infoDiv.className = 'slot-info hidden';
+  infoDiv.dataset.slotId = slotId;
+  container.appendChild(infoDiv);
+
+  // Debounced input listener
+  let timer = null;
+  input.addEventListener('input', function() {
+    clearTimeout(timer);
+    timer = setTimeout(function() { onSlotInput(slotId); }, 100);
+  });
+
+  if (value) {
+    input.value = value;
+    onSlotInput(slotId);
+  }
+
+  return slotId;
+};
+
+window.removeUrlRow = function(slotId) {
+  const idx = slots.findIndex(function(s) { return s.id === slotId; });
+  if (idx === -1) return;
+  const hadData = slots[idx].parsed != null;
+  slots.splice(idx, 1);
+
+  const row = document.querySelector('.url-row[data-slot-id="' + slotId + '"]');
+  if (row) row.remove();
+  const info = document.querySelector('[data-slot-id="' + slotId + '"].slot-info, [data-slot-id="' + slotId + '"].slot-error');
+  if (info) info.remove();
+
+  updateUrlParams();
+  renderProgress();
+
+  if (hadData) {
+    tryAggregate();
+  }
+};
+
+// =====================================================
+// Per-Slot Input Handling
+// =====================================================
+function onSlotInput(slotId) {
+  const slot = slots.find(function(s) { return s.id === slotId; });
+  if (!slot) return;
+
+  const row = document.querySelector('.url-row[data-slot-id="' + slotId + '"]');
+  if (!row) return;
+  const url = row.querySelector('.url-input').value.trim();
+
+  if (!url) {
+    const hadData = slot.parsed != null;
+    slot.identifier = null;
+    slot.source = null;
+    slot.parsed = null;
+    slot.fetchMs = null;
+    slot.payloadSize = null;
+    row.querySelector('.remove-url-btn').style.display = 'none';
+    updateSlotInfo(slotId, null);
+    updateUrlParams();
+    renderProgress();
+    if (hadData) tryAggregate();
+    return;
+  }
+
+  const detected = detectSource(url);
+  if (!detected) return;
+
+  const identifier = detected.extractIdentifier(url);
+  if (!identifier) return;
+
+  if (identifier === slot.identifier) return;
+
+  // Reject duplicate slugs
+  const duplicate = slots.find(function(s) { return s.id !== slotId && s.identifier === identifier; });
+  if (duplicate) {
+    updateSlotInfo(slotId, 'This tournament is already added.', true);
+    return;
+  }
+
+  slot.source = detected;
+  slot.identifier = identifier;
+  slot.parsed = null;
+
+  row.querySelector('.remove-url-btn').style.display = '';
+  updateSlotInfo(slotId, null);
+
+  updateUrlParams();
+  renderProgress();
+  fetchSlot(slotId);
+}
+
+// =====================================================
+// Fetch & Aggregation
+// =====================================================
+function updateSlotInfo(slotId, text, isError) {
+  const el = document.querySelector('[data-slot-id="' + slotId + '"].slot-info, [data-slot-id="' + slotId + '"].slot-error');
+  if (!el) return;
+  if (!text) {
+    el.classList.add('hidden');
+    el.textContent = '';
+    el.className = 'slot-info hidden';
+  } else {
+    if (isError) {
+      el.textContent = text;
+    } else {
+      el.innerHTML = text;
+    }
+    el.className = isError ? 'slot-error' : 'slot-info';
+    el.classList.remove('hidden');
+  }
+}
+
+async function fetchSlot(slotId) {
+  const slot = slots.find(function(s) { return s.id === slotId; });
+  if (!slot || !slot.identifier) return;
+
+  renderProgress();
+
+  try {
+    const t0 = performance.now();
+    const json = await slot.source.fetchData(slot.identifier);
+    const fetchMs = Math.round(performance.now() - t0);
+    const payloadSize = JSON.stringify(json).length;
+    const parsed = slot.source.parseData(json);
+
+    slot.parsed = parsed;
+    slot.fetchMs = fetchMs;
+    slot.payloadSize = payloadSize;
+
+    // Show tournament info under this row
+    const info = parsed.tournamentInfo;
+    const line1 = info.name || 'Tournament';
+    const detail = [];
+    if (info.date) detail.push(info.date);
+    if (info.venue) detail.push(info.venue);
+    detail.push(parsed.players.length + ' players');
+    updateSlotInfo(slotId, line1 + '<br>' + detail.join(' \u00B7 '));
+
+    renderProgress();
+    tryAggregate();
+  } catch (e) {
+    if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
+      setStatus(slot.source.corsHelp(slot.identifier), 'error');
+    } else {
+      setStatus('Error: ' + e.message, 'error');
+    }
+  }
+}
+
+function aggregateSlots() {
+  const loaded = slots.filter(function(s) { return s.parsed && s.parsed.players.length > 0; });
+  if (loaded.length === 0) return null;
+
+  const globalPlayers = new Map();
+
+  // Resolve player key: match by name, only split when both fargoIds are valid and different
+  function playerKey(p) {
+    if (globalPlayers.has(p.name)) {
+      const existing = globalPlayers.get(p.name);
+      if (existing.fargoId && p.fargoId && existing.fargoId !== p.fargoId) {
+        return p.name + '#' + p.fargoId;
+      }
+    }
+    return p.name;
+  }
+
+  for (let ti = 0; ti < loaded.length; ti++) {
+    const slot = loaded[ti];
+    for (const p of slot.parsed.players) {
+      const key = playerKey(p);
+      if (!globalPlayers.has(key)) {
+        globalPlayers.set(key, {
+          id: key,
+          name: p.name,
+          skillLevel: p.skillLevel,
+          fargoId: p.fargoId,
+          place: p.place,
+          index: 0,
+        });
+      } else {
+        const existing = globalPlayers.get(key);
+        if (p.skillLevel != null && (existing.skillLevel == null || p.skillLevel > existing.skillLevel)) {
+          existing.skillLevel = p.skillLevel;
+        }
+        if (!existing.fargoId && p.fargoId) {
+          existing.fargoId = p.fargoId;
+        }
+        const ep = parsePlaceValue(existing.place);
+        const np = parsePlaceValue(p.place);
+        if (np < ep) existing.place = p.place;
+      }
+    }
+  }
+
+  // Assign indices
+  const players = [];
+  let idx = 0;
+  for (const [, gp] of globalPlayers) {
+    gp.index = idx++;
+    players.push(gp);
+  }
+
+  const playerMap = new Map();
+  for (const p of players) playerMap.set(p.id, p);
+
+  // Build local-to-global ID maps (same key logic)
+  const localToGlobal = loaded.map(function(slot) {
+    const m = new Map();
+    for (const p of slot.parsed.players) {
+      const key = playerKey(p);
+      m.set(p.id, key);
+    }
+    return m;
+  });
+
+  // Remap matches
+  const matches = [];
+  for (let i = 0; i < loaded.length; i++) {
+    const tName = loaded[i].parsed.tournamentInfo.name || ('Tournament ' + (i + 1));
+    for (const m of loaded[i].parsed.matches) {
+      matches.push({
+        player1Id: localToGlobal[i].get(m.player1Id),
+        player2Id: localToGlobal[i].get(m.player2Id),
+        score1: m.score1,
+        score2: m.score2,
+        matchNumber: m.matchNumber,
+        tournamentIndex: i,
+        tournamentName: tName,
+      });
+    }
+  }
+
+  return {
+    players: players,
+    matches: matches,
+    playerMap: playerMap,
+  };
+}
+
+function tryAggregate() {
+  const aggregated = aggregateSlots();
+  if (!aggregated || aggregated.players.length === 0) {
+    document.getElementById('results').classList.add('hidden');
+    document.getElementById('debug').classList.add('hidden');
+    cachedParsedData = null;
+    return;
+  }
+
+  cachedParsedData = aggregated;
+  manualRatings.clear();
+
+  // Build preliminary table
+  const { players, matches, playerMap } = aggregated;
+  const playerMatchesMap = new Map();
+  for (const m of matches) {
+    const p1 = playerMap.get(m.player1Id);
+    const p2 = playerMap.get(m.player2Id);
+    const entry1 = { opponent: p2.name, opponentPlace: p2.place, myScore: m.score1, oppScore: m.score2, won: m.score1 > m.score2, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
+    const entry2 = { opponent: p1.name, opponentPlace: p1.place, myScore: m.score2, oppScore: m.score1, won: m.score2 > m.score1, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
+    if (!playerMatchesMap.has(m.player1Id)) playerMatchesMap.set(m.player1Id, []);
+    if (!playerMatchesMap.has(m.player2Id)) playerMatchesMap.set(m.player2Id, []);
+    playerMatchesMap.get(m.player1Id).push(entry1);
+    playerMatchesMap.get(m.player2Id).push(entry2);
+  }
+
+  cachedRows = players.map(function(p) {
+    return {
+      name: p.name,
+      prior: p.skillLevel,
+      place: p.place,
+      optimized: null,
+      delta: null,
+      matches: playerMatchesMap.get(p.id) || [],
+    };
+  });
+  currentSort = { key: 'name', dir: 1 };
+  expandedPlayers.clear();
+  renderTable();
+
+  // Only optimize when ALL slots have a loaded tournament (no empty or pending slots)
+  if (!allSlotsFilled()) return;
+
+  // Wait for optimizer module, then run optimization
+  return lmReady.then(function() {
+    renderProgress();
+    requestAnimationFrame(function() { setTimeout(function() { runOptimization(); }, 0); });
+  });
+}
+
+// =====================================================
+// Progress Table
+// =====================================================
+const SPINNER = '<span class="spinner"></span>';
+
+function renderProgress() {
+  const progressEl = document.getElementById('progress');
+  const body = document.getElementById('progress-body');
+
+  const activeSlots = slots.filter(function(s) { return s.identifier != null; });
+  if (activeSlots.length === 0) {
+    progressEl.classList.add('hidden');
+    return;
+  }
+  progressEl.classList.remove('hidden');
+  document.getElementById('status').classList.add('hidden');
+
+  let html = '';
+
+  for (let i = 0; i < activeSlots.length; i++) {
+    const s = activeSlots[i];
+    const label = s.parsed && s.parsed.tournamentInfo.name
+      ? 'Loading ' + s.parsed.tournamentInfo.name
+      : 'Loading tournament ' + (i + 1);
+    let value;
+    if (s.parsed) {
+      value = '<span class="progress-done">\u2713 ' + s.fetchMs + ' ms \u00B7 ' + formatBytes(s.payloadSize) + ' \u00B7 ' + s.parsed.players.length + ' players</span>';
+    } else {
+      value = SPINNER;
+    }
+    html += '<tr><td class="progress-label">' + label + '</td><td class="progress-value">' + value + '</td></tr>';
+  }
+
+  // Module row
+  const moduleValue = levenbergMarquardt
+    ? '<span class="progress-done">\u2713 ' + lmLoadMs + ' ms</span>'
+    : SPINNER;
+  html += '<tr><td class="progress-label">Loading math modules</td><td class="progress-value" id="progress-module">' + moduleValue + '</td></tr>';
+
+  // Optimization row
+  const optimizeValue = allSlotsFilled()
+    ? SPINNER
+    : '<span class="progress-blocked">\u23F8 waiting for all tournaments</span>';
+  html += '<tr><td class="progress-label">Joint-estimate player performances</td><td class="progress-value" id="progress-optimize">' + optimizeValue + '</td></tr>';
+
+  body.innerHTML = html;
+}
+
+function setProgressDone(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = '<span class="progress-done">\u2713 ' + text + '</span>';
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  return Math.round(bytes / 1024) + ' KB';
+}
+
+function setStatus(msg, type) {
+  const el = document.getElementById('status');
+  el.innerHTML = msg;
+  el.className = 'status-' + type;
+  el.classList.remove('hidden');
+  document.getElementById('progress').classList.add('hidden');
+}
+
+// =====================================================
+// URL Parameters
+// =====================================================
+function updateUrlParams() {
+  const params = new URLSearchParams();
+  for (const s of slots) {
+    if (s.identifier && s.source) {
+      params.append(s.source.id, s.identifier);
+    }
+  }
+  const qs = params.toString();
+  history.replaceState(null, '', qs ? '?' + qs : window.location.pathname);
+}
+
+// =====================================================
+// Optimization
+// =====================================================
+function buildResidualDescriptors(players, matches, playerMap) {
+  const residuals = [];
+
+  for (const m of matches) {
+    residuals.push({
+      type: 'match',
+      playerAIndex: playerMap.get(m.player1Id).index,
+      playerBIndex: playerMap.get(m.player2Id).index,
+      score1: m.score1,
+      score2: m.score2,
+    });
+  }
+
+  const playerRacks = new Array(players.length).fill(0);
+  for (const m of matches) {
+    const racks = m.score1 + m.score2;
+    playerRacks[playerMap.get(m.player1Id).index] += racks;
+    playerRacks[playerMap.get(m.player2Id).index] += racks;
+  }
+  let totalRacksWithPrior = 0;
+  let countWithPrior = 0;
+  for (const p of players) {
+    if (p.skillLevel != null && p.skillLevel >= 0) {
+      totalRacksWithPrior += playerRacks[p.index];
+      countWithPrior++;
+    }
+  }
+  const stickiness = countWithPrior > 0 ? totalRacksWithPrior / countWithPrior * 0.2 : 1;
+
+  for (const p of players) {
+    if (p.skillLevel != null && p.skillLevel >= 0) {
+      residuals.push({
+        type: 'prior',
+        playerIndex: p.index,
+        priorRating: p.skillLevel,
+        stickiness: stickiness,
+      });
+    }
+  }
+
+  return residuals;
+}
+
+function computeResidual(params, residual) {
+  if (residual.type === 'match') {
+    const Ra = params[residual.playerAIndex];
+    const Rb = params[residual.playerBIndex];
+    const ratio = Math.pow(2, (Ra - Rb) / 100);
+    const pA = ratio / (1 + ratio);
+    const totalRacks = residual.score1 + residual.score2;
+    return residual.score1 - totalRacks * pA;
+  } else {
+    const Ra = params[residual.playerIndex];
+    const Rb = residual.priorRating;
+    const ratio = Math.pow(2, (Ra - Rb) / 100);
+    const pA = ratio / (1 + ratio);
+    const totalRacks = residual.stickiness;
+    return residual.stickiness / 2 - totalRacks * pA;
+  }
+}
+
+function optimize(players, matches, playerMap, initialValues, maxIterations) {
+  const residuals = buildResidualDescriptors(players, matches, playerMap);
+  const numResiduals = residuals.length;
+
+  const xData = Array.from({ length: numResiduals }, function(_, i) { return i; });
+  const yData = new Array(numResiduals).fill(0);
+
+  if (!initialValues) {
+    initialValues = players.map(function(p) { return (p.skillLevel != null && p.skillLevel >= 0) ? p.skillLevel : 500; });
+  }
+
+  const parameterizedFunction = function(params) { return function(x) { return computeResidual(params, residuals[x]); }; };
+
+  const result = levenbergMarquardt(
+    { x: xData, y: yData },
+    parameterizedFunction,
+    {
+      initialValues: initialValues,
+      maxIterations: maxIterations || 1000,
+      errorTolerance: 1e-8,
+      damping: 0.01,
+      gradientDifference: 0.1,
+    }
+  );
+
+  return {
+    parameterValues: result.parameterValues,
+    parameterError: result.parameterError,
+    iterations: result.iterations,
+    residuals: residuals,
+  };
+}
+
+function runOptimization() {
+  if (!cachedParsedData) return;
+  const { players, matches, playerMap } = cachedParsedData;
+  const CHUNK = 5;
+  const MAX_ITERATIONS = 1000;
+  let currentValues = null;
+  let totalIterations = 0;
+  const t0 = performance.now();
+
+  function step() {
+    try {
+      const remaining = MAX_ITERATIONS - totalIterations;
+      if (remaining <= 0) return;
+      const prevValues = currentValues;
+      const result = optimize(players, matches, playerMap, currentValues, Math.min(CHUNK, remaining));
+      totalIterations += result.iterations;
+      currentValues = Array.from(result.parameterValues);
+
+      let converged = result.iterations < CHUNK;
+      if (!converged && prevValues) {
+        const maxChange = Math.max.apply(null, currentValues.map(function(v, i) { return Math.abs(v - prevValues[i]); }));
+        converged = maxChange < 0.5;
+      }
+
+      if (converged || totalIterations >= MAX_ITERATIONS) {
+        const elapsed = Math.round(performance.now() - t0);
+        displayResults(players, result);
+        setProgressDone('progress-optimize', elapsed + ' ms \u00B7 ' + totalIterations + ' iterations');
+      } else {
+        step();
+      }
+    } catch (e) {
+      setStatus('Optimization error: ' + e.message, 'error');
+      console.error(e);
+    }
+  }
+
+  requestAnimationFrame(function() { setTimeout(step, 0); });
+}
+
+// =====================================================
+// Results Display
+// =====================================================
+function displayResults(players, result) {
+  const ratings = result.parameterValues;
+
+  for (const p of players) {
+    const row = cachedRows.find(function(r) { return r.name === p.name; });
+    if (row) {
+      row.prior = p.skillLevel;
+      row.optimized = Math.round(ratings[p.index]);
+      row.delta = (p.skillLevel != null && p.skillLevel >= 0)
+        ? Math.round(ratings[p.index] - p.skillLevel)
+        : null;
+    }
+  }
+
+  currentSort = { key: 'optimized', dir: -1 };
+  expandedPlayers.clear();
+  renderTable();
+
+  const priorResidual = result.residuals.find(function(r) { return r.type === 'prior'; });
+  const debugOutput = document.getElementById('debug-output');
+  debugOutput.textContent = JSON.stringify({
+    iterations: result.iterations,
+    totalError: result.parameterError,
+    priorStickiness: priorResidual ? Math.round(priorResidual.stickiness * 100) / 100 : null,
+    numPlayers: players.length,
+    numResiduals: result.residuals.length,
+    numMatchResiduals: result.residuals.filter(function(r) { return r.type === 'match'; }).length,
+    numPriorResiduals: result.residuals.filter(function(r) { return r.type === 'prior'; }).length,
+    ratings: players.map(function(p) { return { name: p.name, fargoId: p.fargoId || null, prior: p.skillLevel, optimized: Math.round(ratings[p.index] * 100) / 100 }; }),
+  }, null, 2);
+  document.getElementById('debug').classList.remove('hidden');
+}
+
+// =====================================================
+// Table Rendering
+// =====================================================
+function ordinal(n) {
+  if (n % 100 >= 11 && n % 100 <= 13) return 'th';
+  switch (n % 10) {
+    case 1: return 'st';
+    case 2: return 'nd';
+    case 3: return 'rd';
+    default: return 'th';
+  }
+}
+
+function renderMatchLine(m) {
+  const cls = m.won ? 'match-win' : 'match-loss';
+  const label = m.won ? 'W' : 'L';
+  const oppPlace = m.opponentPlace ? ' (' + parseInt(m.opponentPlace, 10) + ordinal(parseInt(m.opponentPlace, 10)) + ')' : '';
+  return '<div class="' + cls + '"><span class="match-result">' + label + '</span><span class="match-score">' + m.myScore + '-' + m.oppScore + '</span> vs ' + m.opponent + oppPlace + '</div>';
+}
+
+function parsePlaceValue(place) {
+  if (!place) return Infinity;
+  const num = parseInt(place, 10);
+  return isNaN(num) ? Infinity : num;
+}
+
+function compareRows(a, b, key, dir) {
+  let va = a[key];
+  let vb = b[key];
+  if (key === 'place') {
+    va = parsePlaceValue(va);
+    vb = parsePlaceValue(vb);
+  }
+  if (key === 'name') {
+    return dir * (va || '').localeCompare(vb || '');
+  }
+  if (va == null && vb == null) return 0;
+  if (va == null) return 1;
+  if (vb == null) return -1;
+  return dir * (va - vb);
+}
+
+function renderTable() {
+  const sorted = cachedRows.slice().sort(function(a, b) { return compareRows(a, b, currentSort.key, currentSort.dir); });
+  const loadedCount = slots.filter(function(s) { return s.parsed; }).length;
+  const multiTournament = loadedCount > 1;
+
+  const columns = [
+    { key: null, label: '#', cls: 'num' },
+    { key: 'name', label: 'Name', cls: '' },
+  ];
+  if (!multiTournament) {
+    columns.push({ key: 'place', label: 'Place', cls: 'num' });
+  }
+  columns.push(
+    { key: 'prior', label: 'Official<br>Rating', cls: 'num' },
+    { key: 'optimized', label: 'Perf<br>Rating', cls: 'num' },
+    { key: 'delta', label: 'Delta', cls: 'num' }
+  );
+  const numCols = columns.length;
+
+  let html = '<table><thead><tr>';
+  for (const col of columns) {
+    const arrow = col.key === currentSort.key ? (currentSort.dir === 1 ? ' \u25B2' : ' \u25BC') : ' \u25BC';
+    const arrowStyle = col.key === currentSort.key ? '' : 'visibility:hidden';
+    const onclick = col.key ? 'onclick="handleSort(\'' + col.key + '\')"' : '';
+    html += '<th class="' + col.cls + '" ' + onclick + '>' + col.label + '<span class="sort-arrow" style="' + arrowStyle + '">' + arrow + '</span></th>';
+  }
+  html += '</tr></thead><tbody>';
+
+  sorted.forEach(function(r, i) {
+    const currentVal = manualRatings.has(r.name) ? manualRatings.get(r.name) : (r.prior != null && r.prior >= 0 ? r.prior : '');
+    const priorStr = '<input type="number" class="rating-input" data-player="' + r.name.replace(/"/g, '&quot;') + '" placeholder="\u2014" value="' + currentVal + '">';
+    let deltaStr;
+    if (r.delta == null) {
+      deltaStr = '<span class="no-prior">--</span>';
+    } else if (r.delta > 0) {
+      deltaStr = '<span class="delta-pos">+' + r.delta + '</span>';
+    } else if (r.delta < 0) {
+      deltaStr = '<span class="delta-neg">' + r.delta + '</span>';
+    } else {
+      deltaStr = '0';
+    }
+    html += '<tr class="player-row" data-row="' + i + '">'
+      + '<td class="num">' + (i + 1) + '</td>'
+      + '<td class="name-cell">' + r.name + '</td>'
+      + (multiTournament ? '' : '<td class="num">' + (r.place || '<span class="no-prior">--</span>') + '</td>')
+      + '<td class="num">' + priorStr + '</td>'
+      + '<td class="num">' + (r.optimized != null ? r.optimized : '<span class="no-prior">\u2026</span>') + '</td>'
+      + '<td class="num">' + deltaStr + '</td>'
+      + '</tr>';
+
+    // Match detail row — group by tournament if multi-tournament
+    let matchHtml = '';
+    if (multiTournament) {
+      // Group matches by tournament
+      const byTournament = new Map();
+      for (const m of r.matches) {
+        const tName = m.tournamentName || 'Tournament';
+        if (!byTournament.has(tName)) byTournament.set(tName, []);
+        byTournament.get(tName).push(m);
+      }
+      for (const [tName, tMatches] of byTournament) {
+        matchHtml += '<div class="match-tournament">' + tName + '</div>';
+        for (const m of tMatches) matchHtml += renderMatchLine(m);
+      }
+    } else {
+      for (const m of r.matches) matchHtml += renderMatchLine(m);
+    }
+    html += '<tr class="detail-row" data-detail="' + i + '" style="' + (expandedPlayers.has(r.name) ? '' : 'display:none') + '"><td colspan="' + numCols + '"><div class="match-list">' + matchHtml + '</div></td></tr>';
+  });
+
+  html += '</tbody></table>';
+  const resultsDiv = document.getElementById('results');
+  resultsDiv.innerHTML = html;
+  resultsDiv.classList.remove('hidden');
+
+  // Attach click handlers for expanding rows (name cell only)
+  resultsDiv.querySelectorAll('td.name-cell').forEach(function(td) {
+    td.addEventListener('click', function() {
+      const tr = td.parentElement;
+      const idx = tr.dataset.row;
+      const name = sorted[idx].name;
+      const detail = resultsDiv.querySelector('tr.detail-row[data-detail="' + idx + '"]');
+      if (detail) {
+        const isHidden = detail.style.display === 'none';
+        detail.style.display = isHidden ? '' : 'none';
+        if (isHidden) expandedPlayers.add(name); else expandedPlayers.delete(name);
+      }
+    });
+  });
+
+  // Attach input listeners for rating inputs
+  resultsDiv.querySelectorAll('.rating-input').forEach(function(input) {
+    input.addEventListener('input', function() {
+      const name = input.dataset.player;
+      const val = input.value.trim();
+      const row = cachedRows.find(function(r) { return r.name === name; });
+      const original = row ? row.prior : null;
+      const numVal = parseInt(val, 10);
+      if (val !== '' && numVal !== original) {
+        manualRatings.set(name, numVal);
+      } else {
+        manualRatings.delete(name);
+      }
+      if (manualRatings.size > 0 && numVal >= 300 && numVal <= 900) {
+        window.handleReoptimize();
+      }
+    });
+    input.addEventListener('blur', function() {
+      if (manualRatings.size > 0) {
+        setTimeout(function() { window.handleReoptimize(); }, 100);
+      }
+    });
+    input.addEventListener('click', function(e) { e.stopPropagation(); });
+  });
+}
+
+// =====================================================
+// Re-optimize with manual ratings
+// =====================================================
+window.handleReoptimize = function() {
+  if (!cachedParsedData) return;
+  for (const [name, rating] of manualRatings) {
+    for (const p of cachedParsedData.players) {
+      if (p.name === name) {
+        p.skillLevel = rating;
+        break;
+      }
+    }
+  }
+  manualRatings.clear();
+  var optimizeEl = document.getElementById('progress-optimize');
+  if (optimizeEl) optimizeEl.innerHTML = SPINNER;
+  runOptimization();
+};
+
+window.toggleDebug = function() {
+  document.getElementById('debug-output').classList.toggle('hidden');
+};
+
+window.handleSort = function(key) {
+  if (currentSort.key === key) {
+    currentSort.dir *= -1;
+  } else {
+    currentSort.key = key;
+    currentSort.dir = (key === 'name' || key === 'place') ? 1 : -1;
+  }
+  renderTable();
+};
+
+// =====================================================
+// Init
+// =====================================================
+if (window._autoLoadIdentifiers) {
+  for (const val of window._autoLoadIdentifiers) {
+    window.addUrlRow('https://digitalpool.com/tournaments/' + val);
+  }
+} else {
+  window.addUrlRow();
+}
+
+})();
+</script>
+
+</body>
+</html>
