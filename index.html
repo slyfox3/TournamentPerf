@@ -21,6 +21,7 @@
   .progress-label { color: #64748b; font-weight: 600; }
   .progress-done { color: #166534; font-weight: 500; }
   .progress-blocked { color: #9ca3af; font-style: italic; }
+  .progress-error { color: #dc2626; font-weight: 500; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #e2e8f0; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; }
   .url-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
@@ -157,7 +158,7 @@ let manualRatings = new Map();
 // =====================================================
 window.addUrlRow = function(value) {
   const slotId = nextSlotId++;
-  const slot = { id: slotId, identifier: null, source: null, parsed: null, fetchMs: null, payloadSize: null };
+  const slot = { id: slotId, identifier: null, source: null, parsed: null, failed: false, fetchMs: null, payloadSize: null };
   slots.push(slot);
 
   const container = document.getElementById('url-rows');
@@ -174,8 +175,6 @@ window.addUrlRow = function(value) {
   removeBtn.className = 'remove-url-btn';
   removeBtn.textContent = '\u2212';
   removeBtn.onclick = function() { window.removeUrlRow(slotId); };
-
-  removeBtn.style.display = 'none'; // hidden until slug is parsed
 
   row.appendChild(input);
   row.appendChild(removeBtn);
@@ -199,12 +198,19 @@ window.addUrlRow = function(value) {
     onSlotInput(slotId);
   }
 
+  updateRemoveButtons();
   return slotId;
 };
+
+function updateRemoveButtons() {
+  const display = slots.length > 1 ? '' : 'none';
+  document.querySelectorAll('.remove-url-btn').forEach(function(btn) { btn.style.display = display; });
+}
 
 window.removeUrlRow = function(slotId) {
   const idx = slots.findIndex(function(s) { return s.id === slotId; });
   if (idx === -1) return;
+  const removedIdentifier = slots[idx].identifier;
   const hadData = slots[idx].parsed != null;
   slots.splice(idx, 1);
 
@@ -216,8 +222,19 @@ window.removeUrlRow = function(slotId) {
   updateUrlParams();
   renderProgress();
 
+  updateRemoveButtons();
+
   if (hadData) {
     tryAggregate();
+  }
+
+  // Re-evaluate slots that may have been rejected as duplicates of the removed one
+  if (removedIdentifier) {
+    for (const s of slots) {
+      if (!s.identifier && !s.parsed) {
+        onSlotInput(s.id);
+      }
+    }
   }
 };
 
@@ -239,7 +256,6 @@ function onSlotInput(slotId) {
     slot.parsed = null;
     slot.fetchMs = null;
     slot.payloadSize = null;
-    row.querySelector('.remove-url-btn').style.display = 'none';
     updateSlotInfo(slotId, null);
     updateUrlParams();
     renderProgress();
@@ -265,8 +281,8 @@ function onSlotInput(slotId) {
   slot.source = detected;
   slot.identifier = identifier;
   slot.parsed = null;
+  slot.failed = false;
 
-  row.querySelector('.remove-url-btn').style.display = '';
   updateSlotInfo(slotId, null);
 
   updateUrlParams();
@@ -308,6 +324,14 @@ async function fetchSlot(slotId) {
     const payloadSize = JSON.stringify(json).length;
     const parsed = slot.source.parseData(json);
 
+    if (parsed.players.length === 0) {
+      slot.failed = true;
+      slot.fetchMs = fetchMs;
+      updateSlotInfo(slotId, 'No matches found for this tournament.', true);
+      renderProgress();
+      return;
+    }
+
     slot.parsed = parsed;
     slot.fetchMs = fetchMs;
     slot.payloadSize = payloadSize;
@@ -324,11 +348,10 @@ async function fetchSlot(slotId) {
     renderProgress();
     tryAggregate();
   } catch (e) {
-    if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
-      setStatus(slot.source.corsHelp(slot.identifier), 'error');
-    } else {
-      setStatus('Error: ' + e.message, 'error');
-    }
+    slot.failed = true;
+    slot.fetchMs = Math.round(performance.now() - t0);
+    updateSlotInfo(slotId, 'No matches found for this tournament.', true);
+    renderProgress();
   }
 }
 
@@ -409,6 +432,7 @@ function aggregateSlots() {
         score1: m.score1,
         score2: m.score2,
         player1Won: m.player1Won,
+        isChip: m.isChip || false,
         matchNumber: m.matchNumber,
         tournamentIndex: i,
         tournamentName: tName,
@@ -441,8 +465,8 @@ function tryAggregate() {
   for (const m of matches) {
     const p1 = playerMap.get(m.player1Id);
     const p2 = playerMap.get(m.player2Id);
-    const entry1 = { opponent: p2.name, opponentPlace: m.player2Place, myScore: m.score1, oppScore: m.score2, won: m.player1Won, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
-    const entry2 = { opponent: p1.name, opponentPlace: m.player1Place, myScore: m.score2, oppScore: m.score1, won: !m.player1Won, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
+    const entry1 = { opponent: p2.name, opponentPlace: m.player2Place, myScore: m.score1, oppScore: m.score2, won: m.player1Won, isChip: m.isChip || false, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
+    const entry2 = { opponent: p1.name, opponentPlace: m.player1Place, myScore: m.score2, oppScore: m.score1, won: !m.player1Won, isChip: m.isChip || false, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
     if (!playerMatchesMap.has(m.player1Id)) playerMatchesMap.set(m.player1Id, []);
     if (!playerMatchesMap.has(m.player2Id)) playerMatchesMap.set(m.player2Id, []);
     playerMatchesMap.get(m.player1Id).push(entry1);
@@ -459,6 +483,7 @@ function tryAggregate() {
       matches: playerMatchesMap.get(p.id) || [],
     };
   });
+
   currentSort = { key: 'name', dir: 1 };
   expandedPlayers.clear();
   renderTable();
@@ -500,6 +525,8 @@ function renderProgress() {
     let value;
     if (s.parsed) {
       value = '<span class="progress-done">\u2713 ' + s.fetchMs + ' ms \u00B7 ' + formatBytes(s.payloadSize) + ' \u00B7 ' + s.parsed.players.length + ' players</span>';
+    } else if (s.failed) {
+      value = '<span class="progress-error">' + s.fetchMs + ' ms \u00B7 \u2717 Bad URL</span>';
     } else {
       value = SPINNER;
     }
@@ -740,9 +767,12 @@ function ordinal(n) {
 }
 
 function renderMatchLine(m) {
+  const oppPlace = m.opponentPlace ? ' (' + parseInt(m.opponentPlace, 10) + ordinal(parseInt(m.opponentPlace, 10)) + ')' : '';
+  if (m.isChip) {
+    return '<div><span class="match-result"></span><span class="match-score">' + m.myScore + '-' + m.oppScore + '</span> vs ' + m.opponent + oppPlace + '</div>';
+  }
   const cls = m.won ? 'match-win' : 'match-loss';
   const label = m.won ? 'W' : 'L';
-  const oppPlace = m.opponentPlace ? ' (' + parseInt(m.opponentPlace, 10) + ordinal(parseInt(m.opponentPlace, 10)) + ')' : '';
   return '<div class="' + cls + '"><span class="match-result">' + label + '</span><span class="match-score">' + m.myScore + '-' + m.oppScore + '</span> vs ' + m.opponent + oppPlace + '</div>';
 }
 

@@ -120,41 +120,86 @@
           }
         }
 
+        // Detect chip format: name contains "chip" or all valid match scores <= 1
+        var isChip = !!(tournamentInfo.name && /chip/i.test(tournamentInfo.name));
+        if (!isChip) {
+          var allLow = true, hasMatch = false;
+          for (var ci = 0; ci < brackets.length; ci++) {
+            var cm = brackets[ci];
+            if (cm.status !== 'COMPLETED' || cm.is_bye) continue;
+            if (!cm.challenger1 || !cm.challenger2) continue;
+            if (cm.challenger1_is_forfeit || cm.challenger1_is_withdraw) continue;
+            if (cm.challenger2_is_forfeit || cm.challenger2_is_withdraw) continue;
+            hasMatch = true;
+            if (cm.challenger1_score > 1 || cm.challenger2_score > 1) { allLow = false; break; }
+          }
+          if (hasMatch && allLow) isChip = true;
+        }
+
         var playerMap = new Map();
         var validMatches = [];
 
-        for (var i = 0; i < brackets.length; i++) {
-          var m = brackets[i];
-          if (m.status !== 'COMPLETED') continue;
-          if (m.is_bye) continue;
-          if (!m.challenger1 || !m.challenger2) continue;
-          if (m.challenger1_is_forfeit || m.challenger1_is_withdraw) continue;
-          if (m.challenger2_is_forfeit || m.challenger2_is_withdraw) continue;
-          if (m.challenger1_score == null || m.challenger2_score == null) continue;
-          if (m.challenger1_score === 0 && m.challenger2_score === 0) continue;
-
-          var challengers = [m.challenger1, m.challenger2];
-          for (var j = 0; j < challengers.length; j++) {
-            var c = challengers[j];
-            if (!playerMap.has(c.id)) {
-              playerMap.set(c.id, {
-                id: c.id,
-                name: c.name,
-                skillLevel: resolveSkillLevel(c),
-                fargoId: c.fargo_id,
-                place: c.place,
-              });
-            }
+        function registerPlayer(c) {
+          if (!playerMap.has(c.id)) {
+            playerMap.set(c.id, {
+              id: c.id, name: c.name, skillLevel: resolveSkillLevel(c),
+              fargoId: c.fargo_id, place: c.place,
+            });
           }
+        }
 
-          validMatches.push({
-            player1Id: m.challenger1.id,
-            player2Id: m.challenger2.id,
-            score1: m.challenger1_score,
-            score2: m.challenger2_score,
-            player1Won: !!m.challenger1_is_winner,
-            matchNumber: m.match_number,
-          });
+        if (isChip) {
+          // Chip format: aggregate all games between each pair into one match
+          var pairMap = new Map();
+          for (var i = 0; i < brackets.length; i++) {
+            var m = brackets[i];
+            if (m.status !== 'COMPLETED' || m.is_bye) continue;
+            if (!m.challenger1 || !m.challenger2) continue;
+            if (m.challenger1_is_forfeit || m.challenger1_is_withdraw) continue;
+            if (m.challenger2_is_forfeit || m.challenger2_is_withdraw) continue;
+            if (!m.challenger1_is_winner && !m.challenger2_is_winner) continue;
+
+            registerPlayer(m.challenger1);
+            registerPlayer(m.challenger2);
+
+            var lo = Math.min(m.challenger1.id, m.challenger2.id);
+            var hi = Math.max(m.challenger1.id, m.challenger2.id);
+            var pairKey = lo + '-' + hi;
+            if (!pairMap.has(pairKey)) {
+              pairMap.set(pairKey, { player1Id: lo, player2Id: hi, score1: 0, score2: 0, matchNumber: m.match_number });
+            }
+            var pair = pairMap.get(pairKey);
+            var winnerId = m.challenger1_is_winner ? m.challenger1.id : m.challenger2.id;
+            if (winnerId === lo) pair.score1++; else pair.score2++;
+          }
+          for (var entry of pairMap) {
+            var p = entry[1];
+            p.player1Won = p.score1 > p.score2;
+            p.isChip = true;
+            validMatches.push(p);
+          }
+        } else {
+          for (var i = 0; i < brackets.length; i++) {
+            var m = brackets[i];
+            if (m.status !== 'COMPLETED' || m.is_bye) continue;
+            if (!m.challenger1 || !m.challenger2) continue;
+            if (m.challenger1_is_forfeit || m.challenger1_is_withdraw) continue;
+            if (m.challenger2_is_forfeit || m.challenger2_is_withdraw) continue;
+            if (m.challenger1_score == null || m.challenger2_score == null) continue;
+            if (m.challenger1_score === 0 && m.challenger2_score === 0) continue;
+
+            registerPlayer(m.challenger1);
+            registerPlayer(m.challenger2);
+
+            validMatches.push({
+              player1Id: m.challenger1.id,
+              player2Id: m.challenger2.id,
+              score1: m.challenger1_score,
+              score2: m.challenger2_score,
+              player1Won: !!m.challenger1_is_winner,
+              matchNumber: m.match_number,
+            });
+          }
         }
 
         // Assign indices
