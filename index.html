@@ -13,7 +13,7 @@
   input[type="text"] { padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
   button { color: white; border: none; cursor: pointer; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .hidden { display: none; }
+  .hidden { display: none !important; }
   #status { margin-top: 10px; padding: 10px; border-radius: 4px; }
   .status-error { background: #fee2e2; color: #991b1b; }
   table.progress-table { margin-top: 10px; background: transparent; box-shadow: none; border-radius: 0; overflow: visible; }
@@ -62,22 +62,63 @@
   .rating-input::placeholder { color: #9ca3af; font-style: italic; }
   .rating-input::-webkit-outer-spin-button,
   .rating-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-  td.name-cell { cursor: pointer; }
-  td.name-cell:hover { text-decoration: underline; }
+  .help-toggle { font-size: 13px; color: #2563eb; cursor: pointer; margin-bottom: 20px; display: inline-block; }
+  .help-toggle:hover { text-decoration: underline; }
+  .help-section { font-size: 13px; color: #475569; line-height: 1.7; max-width: 720px; margin-bottom: 20px; }
+  .help-section dt { font-weight: 600; color: #1e293b; margin-top: 8px; }
+  .help-section dd { margin: 2px 0 0 16px; }
+  .help-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: none; border: none; cursor: pointer; padding: 0; color: #475569; transition: color 0.15s; }
+  .help-icon:hover { color: #f97316; }
+  .help-icon svg { width: 26px; height: 26px; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+  .modal { background: white; border-radius: 10px; padding: 28px 32px; max-width: 540px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 8px 30px rgba(0,0,0,0.2); position: relative; }
+  .modal h2 { margin: 0 0 16px 0; font-size: 18px; color: #1e293b; }
+  .modal dl { margin: 0; }
+  .modal dt { font-weight: 600; color: #1e293b; margin-top: 12px; font-size: 13px; }
+  .modal dt:first-child { margin-top: 0; }
+  .modal dd { margin: 3px 0 0 16px; font-size: 13px; color: #475569; line-height: 1.6; }
+  .modal-close { position: absolute; top: 14px; right: 16px; background: none; border: none; font-size: 20px; color: #94a3b8; cursor: pointer; line-height: 1; padding: 4px; }
+  .modal-close:hover { color: #1e293b; }
 </style>
 </head>
 <body>
 
 <h1>Tournament Performance Calculator
-  <a href="https://github.com/slyfox3/TournamentPerf" target="_blank">
-    <img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Repository">
-  </a>
+  <span style="display: flex; align-items: center; gap: 8px;">
+    <button class="help-icon" onclick="document.getElementById('help-modal').classList.remove('hidden')" title="Help"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
+    <a href="https://github.com/slyfox3/TournamentPerf" target="_blank">
+      <img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Repository">
+    </a>
+  </span>
 </h1>
 <p class="subtitle">Calculate player performance ratings from tournament results</p>
 
 <p style="font-size: 13px; color: #475569; line-height: 1.6; max-width: 720px; margin-bottom: 20px;">
   This page uses <a href="https://www.fargorate.com/fargorateblog/archive/behindthecurtain/" target="_blank" style="color: #2563eb;">ab initio global optimization</a> &mdash; the approach behind FargoRate &mdash; to find the single set of ratings for all players that best explains the observed match results. The resulting ratings capture each player's snapshot performance, good day or bad day, across the tournaments loaded here.
 </p>
+
+<div id="help-modal" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="modal">
+    <button class="modal-close" onclick="document.getElementById('help-modal').classList.add('hidden')">&times;</button>
+    <h2>Help</h2>
+    <dl>
+      <dt>Tournament URLs</dt>
+      <dd>Paste a DigitalPool tournament URL to load match data. Click <b>+</b> to add more tournaments and jointly optimize all players across them. Click <b>&minus;</b> to remove a tournament.</dd>
+      <dt>Shareable links</dt>
+      <dd>The URL bar updates automatically as you add tournaments, so you can bookmark or share a direct link.</dd>
+      <dt>Column sorting</dt>
+      <dd>Click any column header to sort by that column. Click again to reverse the sort order.</dd>
+      <dt>Official Rating</dt>
+      <dd>Editable. Type a new value to override a player's official rating and re-run the optimization. Useful when a player's Fargo rating is missing or outdated.</dd>
+      <dt>Perf Rating</dt>
+      <dd>The computed performance rating for each player, based on how the entire tournament unfolded. Higher means stronger performance.</dd>
+      <dt>Delta</dt>
+      <dd>The difference between the performance rating and the official rating. Green positive values mean the player performed above their official rating; red negative values mean below.</dd>
+      <dt>Match details</dt>
+      <dd>Click a player's name to expand their row and see individual match results. When multiple tournaments are loaded, matches are grouped by tournament.</dd>
+    </dl>
+  </div>
+</div>
 
 <div class="input-section">
   <label>Tournament URLs</label>
