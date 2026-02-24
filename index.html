@@ -506,8 +506,8 @@ function tryAggregate() {
   for (const m of matches) {
     const p1 = playerMap.get(m.player1Id);
     const p2 = playerMap.get(m.player2Id);
-    const entry1 = { opponent: p2.name, opponentPlace: m.player2Place, myScore: m.score1, oppScore: m.score2, won: m.player1Won, isChip: m.isChip || false, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
-    const entry2 = { opponent: p1.name, opponentPlace: m.player1Place, myScore: m.score2, oppScore: m.score1, won: !m.player1Won, isChip: m.isChip || false, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
+    const entry1 = { opponent: p2.name, opponentPlace: m.player2Place, myPlace: m.player1Place, myScore: m.score1, oppScore: m.score2, won: m.player1Won, isChip: m.isChip || false, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
+    const entry2 = { opponent: p1.name, opponentPlace: m.player1Place, myPlace: m.player2Place, myScore: m.score2, oppScore: m.score1, won: !m.player1Won, isChip: m.isChip || false, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
     if (!playerMatchesMap.has(m.player1Id)) playerMatchesMap.set(m.player1Id, []);
     if (!playerMatchesMap.has(m.player2Id)) playerMatchesMap.set(m.player2Id, []);
     playerMatchesMap.get(m.player1Id).push(entry1);
@@ -807,8 +807,20 @@ function ordinal(n) {
   }
 }
 
+function formatPlace(place) {
+  if (!place) return '';
+  var parts = place.split('-');
+  if (parts.length === 2) {
+    var lo = parseInt(parts[0], 10);
+    var hi = parseInt(parts[1], 10);
+    return lo + ordinal(lo) + '-' + hi + ordinal(hi);
+  }
+  var n = parseInt(place, 10);
+  return isNaN(n) ? place : n + ordinal(n);
+}
+
 function renderMatchLine(m) {
-  const oppPlace = m.opponentPlace ? ' (' + parseInt(m.opponentPlace, 10) + ordinal(parseInt(m.opponentPlace, 10)) + ')' : '';
+  const oppPlace = m.opponentPlace ? ' (' + formatPlace(m.opponentPlace) + ')' : '';
   if (m.isChip) {
     return '<div><span class="match-result"></span><span class="match-score">' + m.myScore + '-' + m.oppScore + '</span> vs ' + m.opponent + oppPlace + '</div>';
   }
@@ -900,7 +912,9 @@ function renderTable() {
         byTournament.get(tName).push(m);
       }
       for (const [tName, tMatches] of byTournament) {
-        matchHtml += '<div class="match-tournament">' + tName + '</div>';
+        const place = tMatches[0].myPlace;
+        const placeStr = place ? '<div class="match-tournament" style="font-weight:400;">Finished ' + formatPlace(place) + '</div>' : '';
+        matchHtml += '<div class="match-tournament">' + tName + '</div>' + placeStr;
         for (const m of tMatches) matchHtml += renderMatchLine(m);
       }
     } else {
