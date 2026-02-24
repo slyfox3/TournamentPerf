@@ -366,9 +366,6 @@ function aggregateSlots() {
         if (!existing.fargoId && p.fargoId) {
           existing.fargoId = p.fargoId;
         }
-        const ep = parsePlaceValue(existing.place);
-        const np = parsePlaceValue(p.place);
-        if (np < ep) existing.place = p.place;
       }
     }
   }
@@ -398,12 +395,16 @@ function aggregateSlots() {
   const matches = [];
   for (let i = 0; i < loaded.length; i++) {
     const tName = loaded[i].parsed.tournamentInfo.name || ('Tournament ' + (i + 1));
+    const tPlayerMap = loaded[i].parsed.playerMap;
     for (const m of loaded[i].parsed.matches) {
       matches.push({
         player1Id: localToGlobal[i].get(m.player1Id),
         player2Id: localToGlobal[i].get(m.player2Id),
+        player1Place: tPlayerMap.get(m.player1Id).place,
+        player2Place: tPlayerMap.get(m.player2Id).place,
         score1: m.score1,
         score2: m.score2,
+        player1Won: m.player1Won,
         matchNumber: m.matchNumber,
         tournamentIndex: i,
         tournamentName: tName,
@@ -436,8 +437,8 @@ function tryAggregate() {
   for (const m of matches) {
     const p1 = playerMap.get(m.player1Id);
     const p2 = playerMap.get(m.player2Id);
-    const entry1 = { opponent: p2.name, opponentPlace: p2.place, myScore: m.score1, oppScore: m.score2, won: m.score1 > m.score2, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
-    const entry2 = { opponent: p1.name, opponentPlace: p1.place, myScore: m.score2, oppScore: m.score1, won: m.score2 > m.score1, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
+    const entry1 = { opponent: p2.name, opponentPlace: m.player2Place, myScore: m.score1, oppScore: m.score2, won: m.player1Won, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
+    const entry2 = { opponent: p1.name, opponentPlace: m.player1Place, myScore: m.score2, oppScore: m.score1, won: !m.player1Won, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
     if (!playerMatchesMap.has(m.player1Id)) playerMatchesMap.set(m.player1Id, []);
     if (!playerMatchesMap.has(m.player2Id)) playerMatchesMap.set(m.player2Id, []);
     playerMatchesMap.get(m.player1Id).push(entry1);

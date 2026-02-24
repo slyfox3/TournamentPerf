@@ -34,6 +34,8 @@
       + '    }\n'
       + '    challenger1_score\n'
       + '    challenger2_score\n'
+      + '    challenger1_is_winner\n'
+      + '    challenger2_is_winner\n'
       + '    challenger1_is_forfeit\n'
       + '    challenger1_is_withdraw\n'
       + '    challenger2_is_forfeit\n'
@@ -150,6 +152,7 @@
             player2Id: m.challenger2.id,
             score1: m.challenger1_score,
             score2: m.challenger2_score,
+            player1Won: !!m.challenger1_is_winner,
             matchNumber: m.match_number,
           });
         }
