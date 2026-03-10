@@ -23,6 +23,8 @@
   .progress-blocked { color: #9ca3af; font-style: italic; }
   .progress-error { color: #dc2626; font-weight: 500; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .progress-pulse { color: #2563eb; animation: pulse 1.5s ease-in-out infinite; }
   .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #e2e8f0; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; }
   .url-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
   .url-row input { flex: 1; }
@@ -103,7 +105,7 @@
     <h2>Help</h2>
     <dl>
       <dt>Tournament URLs</dt>
-      <dd>Paste a DigitalPool tournament URL to load match data. Click <b>+</b> to add more tournaments and jointly optimize all players across them. Click <b>&minus;</b> to remove a tournament.</dd>
+      <dd>Paste a DigitalPool or BracketBeast tournament URL to load match data. Click <b>+</b> to add more tournaments and jointly optimize all players across them. Click <b>&minus;</b> to remove a tournament.</dd>
       <dt>Shareable links</dt>
       <dd>The URL bar updates automatically as you add tournaments, so you can bookmark or share a direct link.</dd>
       <dt>Column sorting</dt>
@@ -136,9 +138,15 @@
   // Pre-fill URLs from query params
   (function() {
     var params = new URLSearchParams(window.location.search);
-    var vals = params.getAll('digitalpool');
-    if (vals.length > 0) {
-      window._autoLoadIdentifiers = vals;
+    var entries = [];
+    params.getAll('digitalpool').forEach(function(v) {
+      entries.push('https://digitalpool.com/tournaments/' + v);
+    });
+    params.getAll('bracketbeast').forEach(function(v) {
+      entries.push('https://player.bracketbeast.com/tournament/0/divisions/0/brackets/' + v);
+    });
+    if (entries.length > 0) {
+      window._autoLoadUrls = entries;
     }
   })();
   </script>
@@ -155,7 +163,9 @@
   <pre id="debug-output" class="hidden"></pre>
 </div>
 
+<script src="fargorate.js"></script>
 <script src="digitalpool.js"></script>
+<script src="bracketbeast.js"></script>
 <script>
 (function() {
 'use strict';
@@ -188,6 +198,7 @@ function allSlotsFilled() {
 let slots = [];
 let nextSlotId = 0;
 let cachedParsedData = null; // aggregated data
+let fargoProgress = null; // { done, total, resolved } or null
 
 let cachedRows = [];
 let currentSort = { key: 'optimized', dir: -1 };
@@ -388,12 +399,60 @@ async function fetchSlot(slotId) {
 
     renderProgress();
     tryAggregate();
+
+    // Kick off incremental Fargo lookups if needed
+    if (slot.source.needsRatingLookup && window.FargoRateLookup) {
+      startFargoLookups(slot);
+    }
   } catch (e) {
     slot.failed = true;
     slot.fetchMs = Math.round(performance.now() - t0);
     updateSlotInfo(slotId, 'No matches found for this tournament.', true);
     renderProgress();
   }
+}
+
+// =====================================================
+// Incremental Fargo Rating Lookups
+// =====================================================
+async function startFargoLookups(slot) {
+  if (!slot.parsed || !window.FargoRateLookup) return;
+
+  const names = slot.parsed.players.map(function(p) { return p.name; });
+  fargoProgress = { done: 0, total: names.length, resolved: 0 };
+  renderProgress();
+
+  const fargoResults = await window.FargoRateLookup.resolveAll(names, {
+    onProgress: function(done, total, results) {
+      fargoProgress.done = done;
+      fargoProgress.resolved = 0;
+      results.forEach(function(v) { if (v) fargoProgress.resolved++; });
+      renderProgress();
+    },
+  });
+
+  // Final application with disambiguation applied
+  fargoProgress.resolved = 0;
+  fargoResults.forEach(function(v) { if (v) fargoProgress.resolved++; });
+  fargoProgress.done = fargoProgress.total;
+  applyFargoResults(slot, fargoResults);
+  renderProgress();
+}
+
+function applyFargoResults(slot, fargoResults) {
+  if (!slot.parsed) return;
+  let resolved = 0;
+  for (const p of slot.parsed.players) {
+    const fargo = fargoResults.get(p.name);
+    if (fargo) {
+      p.skillLevel = fargo.rating;
+      p.fargoId = fargo.fargoId;
+      resolved++;
+    }
+  }
+  fargoProgress.resolved = resolved;
+  // Re-aggregate and re-optimize
+  tryAggregate();
 }
 
 function aggregateSlots() {
@@ -532,6 +591,10 @@ function tryAggregate() {
   // Only optimize when ALL slots have a loaded tournament (no empty or pending slots)
   if (!allSlotsFilled()) return;
 
+  // Wait for Fargo lookups to finish before optimizing
+  const needsFargoLookup = slots.some(function(s) { return s.source && s.source.needsRatingLookup; });
+  if (needsFargoLookup && (!fargoProgress || fargoProgress.done < fargoProgress.total)) return;
+
   // Wait for optimizer module, then run optimization
   return lmReady.then(function() {
     renderProgress();
@@ -574,6 +637,20 @@ function renderProgress() {
     html += '<tr><td class="progress-label">' + label + '</td><td class="progress-value">' + value + '</td></tr>';
   }
 
+  // Fargo lookup row — show when any slot needs Fargo lookups (e.g. BracketBeast)
+  const needsFargo = activeSlots.some(function(s) { return s.source && s.source.needsRatingLookup; });
+  if (needsFargo) {
+    let fargoValue;
+    if (fargoProgress && fargoProgress.done >= fargoProgress.total) {
+      fargoValue = '<span class="progress-done">\u2713 ' + fargoProgress.resolved + ' / ' + fargoProgress.total + ' players matched</span>';
+    } else if (fargoProgress) {
+      fargoValue = SPINNER + ' ' + fargoProgress.done + ' / ' + fargoProgress.total + ' players';
+    } else {
+      fargoValue = '<span class="progress-blocked">\u23F8 waiting for tournament data</span>';
+    }
+    html += '<tr><td class="progress-label">Looking up official ratings</td><td class="progress-value">' + fargoValue + '</td></tr>';
+  }
+
   // Module row
   const moduleValue = levenbergMarquardt
     ? '<span class="progress-done">\u2713 ' + lmLoadMs + ' ms</span>'
@@ -581,9 +658,15 @@ function renderProgress() {
   html += '<tr><td class="progress-label">Loading math modules</td><td class="progress-value" id="progress-module">' + moduleValue + '</td></tr>';
 
   // Optimization row
-  const optimizeValue = allSlotsFilled()
-    ? SPINNER
-    : '<span class="progress-blocked">\u23F8 waiting for all tournaments</span>';
+  const fargoInProgress = needsFargo && fargoProgress && fargoProgress.done < fargoProgress.total;
+  let optimizeValue;
+  if (fargoInProgress) {
+    optimizeValue = '<span class="progress-pulse">\u23F8 waiting for official ratings</span>';
+  } else if (allSlotsFilled()) {
+    optimizeValue = SPINNER;
+  } else {
+    optimizeValue = '<span class="progress-blocked">\u23F8 waiting for all tournaments</span>';
+  }
   html += '<tr><td class="progress-label">Joint-estimate player performances</td><td class="progress-value" id="progress-optimize">' + optimizeValue + '</td></tr>';
 
   body.innerHTML = html;
@@ -723,6 +806,7 @@ function runOptimization() {
   const { players, matches, playerMap } = cachedParsedData;
   const CHUNK = 5;
   const MAX_ITERATIONS = 1000;
+  const convergenceThreshold = players.length > 64 ? 2.0 : 0.5;
   let currentValues = null;
   let totalIterations = 0;
   const t0 = performance.now();
@@ -739,7 +823,13 @@ function runOptimization() {
       let converged = result.iterations < CHUNK;
       if (!converged && prevValues) {
         const maxChange = Math.max.apply(null, currentValues.map(function(v, i) { return Math.abs(v - prevValues[i]); }));
-        converged = maxChange < 0.5;
+        converged = maxChange < convergenceThreshold;
+      }
+
+      // Update progress with iteration count
+      const optimizeEl = document.getElementById('progress-optimize');
+      if (optimizeEl && !converged && totalIterations < MAX_ITERATIONS) {
+        optimizeEl.innerHTML = SPINNER + ' ' + totalIterations + ' iterations\u2026';
       }
 
       if (converged || totalIterations >= MAX_ITERATIONS) {
@@ -747,7 +837,7 @@ function runOptimization() {
         displayResults(players, result);
         setProgressDone('progress-optimize', elapsed + ' ms \u00B7 ' + totalIterations + ' iterations');
       } else {
-        step();
+        requestAnimationFrame(function() { setTimeout(step, 0); });
       }
     } catch (e) {
       setStatus('Optimization error: ' + e.message, 'error');
@@ -1005,9 +1095,9 @@ window.handleSort = function(key) {
 // =====================================================
 // Init
 // =====================================================
-if (window._autoLoadIdentifiers) {
-  for (const val of window._autoLoadIdentifiers) {
-    window.addUrlRow('https://digitalpool.com/tournaments/' + val);
+if (window._autoLoadUrls) {
+  for (const url of window._autoLoadUrls) {
+    window.addUrlRow(url);
   }
 } else {
   window.addUrlRow();
