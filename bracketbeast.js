@@ -106,6 +106,14 @@
     buildShareUrl: function(identifier) {
       return 'https://player.bracketbeast.com/tournament/0/divisions/0/brackets/' + identifier;
     },
+
+    corsHelp: function(identifier) {
+      return 'CORS proxy blocked. Try again later, or paste JSON manually.\n'
+        + 'curl -s \'' + API_ENDPOINT + '\' '
+        + '-H \'Content-Type: application/json\' '
+        + '-H \'tenantid: 1.\' '
+        + '-d \'{"divisionBracketId":' + identifier + '}\'';
+    },
   };
 
   window.TournamentDataSources = window.TournamentDataSources || [];

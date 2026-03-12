@@ -353,11 +353,7 @@ function updateSlotInfo(slotId, text, isError) {
     el.textContent = '';
     el.className = 'slot-info hidden';
   } else {
-    if (isError) {
-      el.textContent = text;
-    } else {
-      el.innerHTML = text;
-    }
+    el.innerHTML = text;
     el.className = isError ? 'slot-error' : 'slot-info';
     el.classList.remove('hidden');
   }
@@ -369,8 +365,8 @@ async function fetchSlot(slotId) {
 
   renderProgress();
 
+  const t0 = performance.now();
   try {
-    const t0 = performance.now();
     const json = await slot.source.fetchData(slot.identifier);
     const fetchMs = Math.round(performance.now() - t0);
     const payloadSize = JSON.stringify(json).length;
@@ -407,7 +403,12 @@ async function fetchSlot(slotId) {
   } catch (e) {
     slot.failed = true;
     slot.fetchMs = Math.round(performance.now() - t0);
-    updateSlotInfo(slotId, 'No matches found for this tournament.', true);
+    var errMsg = 'Failed to fetch tournament data.';
+    if (slot.source.corsHelp) {
+      errMsg += '<br><code style="font-size:11px;word-break:break-all;display:block;margin-top:4px;background:#f1f5f9;padding:4px 6px;border-radius:3px">'
+        + slot.source.corsHelp(slot.identifier).replace(/\n/g, '<br>') + '</code>';
+    }
+    updateSlotInfo(slotId, errMsg, true);
     renderProgress();
   }
 }
