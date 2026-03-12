@@ -405,8 +405,11 @@ async function fetchSlot(slotId) {
     slot.fetchMs = Math.round(performance.now() - t0);
     var errMsg = 'Failed to fetch tournament data.';
     if (slot.source.corsHelp) {
+      var helpText = slot.source.corsHelp(slot.identifier);
+      // Make URLs in the help text clickable
+      helpText = helpText.replace(/(https?:\/\/localhost[^\s<]*)/g, '<a href="$1" target="_blank">$1</a>');
       errMsg += '<br><code style="font-size:11px;word-break:break-all;display:block;margin-top:4px;background:#f1f5f9;padding:4px 6px;border-radius:3px">'
-        + slot.source.corsHelp(slot.identifier).replace(/\n/g, '<br>') + '</code>';
+        + helpText.replace(/\n/g, '<br>') + '</code>';
     }
     updateSlotInfo(slotId, errMsg, true);
     renderProgress();

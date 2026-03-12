@@ -108,11 +108,12 @@
     },
 
     corsHelp: function(identifier) {
-      return 'CORS proxy blocked. Try again later, or paste JSON manually.\n'
-        + 'curl -s \'' + API_ENDPOINT + '\' '
-        + '-H \'Content-Type: application/json\' '
-        + '-H \'tenantid: 1.\' '
-        + '-d \'{"divisionBracketId":' + identifier + '}\'';
+      var localUrl = 'http://localhost:8080/?bracketbeast=' + identifier;
+      return 'BracketBeast requires a local server. Run this in your terminal:'
+        + '\n'
+        + 'cd /tmp && git clone https://github.com/slyfox3/TournamentPerf.git 2>/dev/null; cd /tmp/TournamentPerf && git pull -q && python3 -m http.server 8080'
+        + '\n'
+        + 'Then open: ' + localUrl;
     },
   };
 
