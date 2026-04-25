@@ -426,7 +426,13 @@ async function fetchSlot(slotId) {
 
     // Show tournament info under this row
     const info = parsed.tournamentInfo;
-    const line1 = info.name || 'Tournament';
+    var bracketLink = '';
+    if (slot.source.id === 'digitalpool') {
+      bracketLink = ' <a href="' + slot.source.buildShareUrl(slot.identifier) + '/bracket" target="_blank" style="font-weight:400;margin-left:12px;">Bracket &rarr;</a>';
+    } else if (slot.source.id === 'bracketbeast') {
+      bracketLink = ' <a href="' + slot.source.buildShareUrl(slot.identifier) + '" target="_blank" style="font-weight:400;margin-left:12px;">Bracket &rarr;</a>';
+    }
+    const line1 = (info.name || 'Tournament') + bracketLink;
     const detail = [];
     if (info.date) detail.push(info.date);
     if (info.venue) detail.push(info.venue);
