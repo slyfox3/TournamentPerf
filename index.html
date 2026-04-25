@@ -139,9 +139,6 @@
     <tbody id="progress-body"></tbody>
   </table>
   <script>
-  console.time('total-startup');
-  console.time('inline-script-parse');
-
   // Pre-fill URLs from query params, show immediate loading feedback, and prefetch data
   (function() {
     var params = new URLSearchParams(window.location.search);
@@ -155,8 +152,6 @@
     });
     if (entries.length > 0) {
       window._autoLoadUrls = entries;
-      console.log('[startup] autoLoadUrls parsed:', entries);
-      // Show loading feedback immediately, before external scripts load
       var progressEl = document.getElementById('progress');
       var body = document.getElementById('progress-body');
       var html = '';
@@ -169,11 +164,9 @@
       // Prefetch DigitalPool data immediately — runs in parallel with script loading
       if (dpSlugs.length > 0) {
         window._prefetchedData = {};
-        window._prefetchT0 = performance.now();
         var dpQuery = 'query tournament_brackets($slug: String!) { tournament_brackets(where: {tournament: {slug: {_eq: $slug}}} order_by: {match_number: asc}) { challenger1 { id name skill_level fargo_id place __typename } challenger2 { id name skill_level fargo_id place __typename } challenger1_score challenger2_score challenger1_is_winner challenger2_is_winner challenger1_is_forfeit challenger1_is_withdraw challenger2_is_forfeit challenger2_is_withdraw status is_bye match_number tournament { name start_date_time venue { name city region __typename } __typename } __typename } }';
         dpSlugs.forEach(function(slug) {
           var fetchT0 = performance.now();
-          console.time('prefetch-' + slug);
           window._prefetchedData[slug] = fetch('https://api-cached.digitalpool.com/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -182,7 +175,6 @@
             if (!r.ok) throw new Error('HTTP ' + r.status);
             return r.json();
           }).then(function(json) {
-            console.timeEnd('prefetch-' + slug);
             if (json.errors) throw new Error(json.errors[0].message);
             return { json: json, fetchMs: Math.round(performance.now() - fetchT0), payloadSize: JSON.stringify(json).length };
           });
@@ -190,7 +182,6 @@
       }
     }
   })();
-  console.timeEnd('inline-script-parse');
   </script>
 </div>
 
@@ -201,480 +192,10 @@
   <pre id="debug-output" class="hidden"></pre>
 </div>
 
-<script>console.time('load-fargorate.js');</script>
+<script src="fargorate.js"></script>
+<script src="digitalpool.js"></script>
+<script src="bracketbeast.js"></script>
 <script>
-// fargorate.js — inlined to avoid file:// script loading delay
-(function() {
-  'use strict';
-
-  var API_BASE = 'https://dashboard.fargorate.com/api/indexsearch?q=';
-
-  function extractState(location) {
-    if (!location) return null;
-    var trimmed = location.trim();
-    var match = trimmed.match(/\b([A-Z]{2})$/);
-    return match ? match[1] : null;
-  }
-
-  function fetchOne(name) {
-    return fetch(API_BASE + encodeURIComponent(name), {
-      headers: {
-        'Accept': 'application/json, text/javascript, */*; q=0.01',
-        'Origin': 'https://fairmatch.fargorate.com',
-        'Referer': 'https://fairmatch.fargorate.com/',
-      },
-    })
-      .then(function(r) { return r.json(); })
-      .then(function(json) { return { name: name, value: json.value || [] }; })
-      .catch(function() { return { name: name, value: [] }; });
-  }
-
-  function makeResult(c) {
-    return {
-      rating: parseInt(c.effectiveRating, 10) || parseInt(c.rating, 10) || null,
-      fargoId: c.id,
-      location: (c.location || '').trim(),
-    };
-  }
-
-  async function resolveAll(names, options) {
-    options = options || {};
-    var onProgress = options.onProgress || null;
-    var concurrency = options.concurrency || 6;
-
-    var results = new Map();
-    if (!names || names.length === 0) return results;
-
-    var total = names.length;
-    var done = 0;
-    var pending = [];
-    var knownStates = new Set();
-    var nextIndex = 0;
-
-    function classifyResponse(resp) {
-      var candidates = resp.value;
-      if (candidates.length === 0) {
-        results.set(resp.name, null);
-      } else if (candidates.length === 1) {
-        var c = candidates[0];
-        var state = extractState(c.location);
-        results.set(resp.name, makeResult(c));
-        if (state) knownStates.add(state);
-      } else {
-        pending.push({ name: resp.name, candidates: candidates });
-      }
-    }
-
-    await new Promise(function(resolve) {
-      var inFlight = 0;
-
-      function launch() {
-        while (inFlight < concurrency && nextIndex < total) {
-          var name = names[nextIndex++];
-          inFlight++;
-          fetchOne(name).then(function(resp) {
-            classifyResponse(resp);
-            done++;
-            inFlight--;
-            if (onProgress) onProgress(done, total, results);
-            if (done >= total) {
-              resolve();
-            } else {
-              launch();
-            }
-          });
-        }
-      }
-
-      launch();
-    });
-
-    var changed = true;
-    while (changed && pending.length > 0) {
-      changed = false;
-      var stillPending = [];
-
-      for (var pi = 0; pi < pending.length; pi++) {
-        var entry = pending[pi];
-        var filtered = entry.candidates.filter(function(c) {
-          var st = extractState(c.location);
-          return st && knownStates.has(st);
-        });
-
-        if (filtered.length === 1) {
-          var fc = filtered[0];
-          var fState = extractState(fc.location);
-          results.set(entry.name, makeResult(fc));
-          if (fState) knownStates.add(fState);
-          changed = true;
-        } else {
-          stillPending.push(entry);
-        }
-      }
-
-      pending = stillPending;
-    }
-
-    for (var k = 0; k < pending.length; k++) {
-      results.set(pending[k].name, null);
-    }
-
-    return results;
-  }
-
-  window.FargoRateLookup = {
-    resolveAll: resolveAll,
-  };
-})();
-</script>
-<script>console.timeEnd('load-fargorate.js'); console.time('load-digitalpool.js');</script>
-<script>
-// digitalpool.js — inlined to avoid file:// script loading delay
-(function() {
-  'use strict';
-
-  var DigitalPool = (function() {
-    var GRAPHQL_ENDPOINT = 'https://api-cached.digitalpool.com/';
-
-    var GRAPHQL_QUERY = 'query tournament_brackets($slug: String!) {\n'
-      + '  tournament_brackets(\n'
-      + '    where: {tournament: {slug: {_eq: $slug}}}\n'
-      + '    order_by: {match_number: asc}\n'
-      + '  ) {\n'
-      + '    challenger1 {\n'
-      + '      id\n'
-      + '      name\n'
-      + '      skill_level\n'
-      + '      fargo_id\n'
-      + '      place\n'
-      + '      __typename\n'
-      + '    }\n'
-      + '    challenger2 {\n'
-      + '      id\n'
-      + '      name\n'
-      + '      skill_level\n'
-      + '      fargo_id\n'
-      + '      place\n'
-      + '      __typename\n'
-      + '    }\n'
-      + '    challenger1_score\n'
-      + '    challenger2_score\n'
-      + '    challenger1_is_winner\n'
-      + '    challenger2_is_winner\n'
-      + '    challenger1_is_forfeit\n'
-      + '    challenger1_is_withdraw\n'
-      + '    challenger2_is_forfeit\n'
-      + '    challenger2_is_withdraw\n'
-      + '    status\n'
-      + '    is_bye\n'
-      + '    match_number\n'
-      + '    tournament {\n'
-      + '      name\n'
-      + '      start_date_time\n'
-      + '      venue {\n'
-      + '        name\n'
-      + '        city\n'
-      + '        region\n'
-      + '        __typename\n'
-      + '      }\n'
-      + '      __typename\n'
-      + '    }\n'
-      + '    __typename\n'
-      + '  }\n'
-      + '}';
-
-    function resolveSkillLevel(challenger) {
-      if (challenger.skill_level != null && Number.isInteger(challenger.skill_level)) {
-        return challenger.skill_level;
-      }
-      var nameMatch = challenger.name.match(/\b(\d{2,4})\b/);
-      if (nameMatch) {
-        return parseInt(nameMatch[1], 10);
-      }
-      return null;
-    }
-
-    return {
-      id: 'digitalpool',
-      name: 'DigitalPool',
-      urlPlaceholder: 'https://digitalpool.com/tournaments/your-tournament',
-      jsonPlaceholder: '{"data":{"tournament_brackets":[...]}}',
-
-      matchesUrl: function(url) {
-        return /digitalpool\.com\/tournaments\//i.test(url);
-      },
-
-      extractIdentifier: function(url) {
-        var match = url.match(/\/tournaments\/([^\/\?#]+)/);
-        if (!match) return null;
-        try { return decodeURIComponent(match[1]); } catch(e) { return match[1]; }
-      },
-
-      fetchData: async function(identifier) {
-        var response = await fetch(GRAPHQL_ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            operationName: 'tournament_brackets',
-            variables: { slug: identifier },
-            query: GRAPHQL_QUERY,
-          }),
-        });
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        var json = await response.json();
-        if (json.errors) throw new Error(json.errors[0].message);
-        return json;
-      },
-
-      parseData: function(json) {
-        var brackets = json.data.tournament_brackets;
-
-        var tournamentInfo = {};
-        if (brackets.length > 0 && brackets[0].tournament) {
-          var t = brackets[0].tournament;
-          tournamentInfo.name = t.name || null;
-          tournamentInfo.date = t.start_date_time
-            ? new Date(t.start_date_time).toLocaleDateString(undefined, {
-                weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-              })
-            : null;
-          if (t.venue) {
-            var parts = [t.venue.name, t.venue.city, t.venue.region].filter(Boolean);
-            tournamentInfo.venue = parts.length > 0 ? parts.join(', ') : null;
-          }
-        }
-
-        var isChip = !!(tournamentInfo.name && /chip/i.test(tournamentInfo.name));
-        if (!isChip) {
-          var allLow = true, hasMatch = false;
-          for (var ci = 0; ci < brackets.length; ci++) {
-            var cm = brackets[ci];
-            if (cm.status !== 'COMPLETED' || cm.is_bye) continue;
-            if (!cm.challenger1 || !cm.challenger2) continue;
-            if (cm.challenger1_is_forfeit || cm.challenger1_is_withdraw) continue;
-            if (cm.challenger2_is_forfeit || cm.challenger2_is_withdraw) continue;
-            hasMatch = true;
-            if (cm.challenger1_score > 1 || cm.challenger2_score > 1) { allLow = false; break; }
-          }
-          if (hasMatch && allLow) isChip = true;
-        }
-
-        var playerMap = new Map();
-        var validMatches = [];
-
-        function registerPlayer(c) {
-          if (!playerMap.has(c.id)) {
-            playerMap.set(c.id, {
-              id: c.id, name: c.name, skillLevel: resolveSkillLevel(c),
-              fargoId: c.fargo_id, place: c.place,
-            });
-          }
-        }
-
-        if (isChip) {
-          var pairMap = new Map();
-          for (var i = 0; i < brackets.length; i++) {
-            var m = brackets[i];
-            if (m.status !== 'COMPLETED' || m.is_bye) continue;
-            if (!m.challenger1 || !m.challenger2) continue;
-            if (m.challenger1_is_forfeit || m.challenger1_is_withdraw) continue;
-            if (m.challenger2_is_forfeit || m.challenger2_is_withdraw) continue;
-            if (!m.challenger1_is_winner && !m.challenger2_is_winner) continue;
-
-            registerPlayer(m.challenger1);
-            registerPlayer(m.challenger2);
-
-            var lo = Math.min(m.challenger1.id, m.challenger2.id);
-            var hi = Math.max(m.challenger1.id, m.challenger2.id);
-            var pairKey = lo + '-' + hi;
-            if (!pairMap.has(pairKey)) {
-              pairMap.set(pairKey, { player1Id: lo, player2Id: hi, score1: 0, score2: 0, matchNumber: m.match_number });
-            }
-            var pair = pairMap.get(pairKey);
-            var winnerId = m.challenger1_is_winner ? m.challenger1.id : m.challenger2.id;
-            if (winnerId === lo) pair.score1++; else pair.score2++;
-          }
-          for (var entry of pairMap) {
-            var p = entry[1];
-            p.player1Won = p.score1 > p.score2;
-            p.isChip = true;
-            validMatches.push(p);
-          }
-        } else {
-          for (var i = 0; i < brackets.length; i++) {
-            var m = brackets[i];
-            if (m.status !== 'COMPLETED' || m.is_bye) continue;
-            if (!m.challenger1 || !m.challenger2) continue;
-            if (m.challenger1_is_forfeit || m.challenger1_is_withdraw) continue;
-            if (m.challenger2_is_forfeit || m.challenger2_is_withdraw) continue;
-            if (m.challenger1_score == null || m.challenger2_score == null) continue;
-            if (m.challenger1_score === 0 && m.challenger2_score === 0) continue;
-
-            registerPlayer(m.challenger1);
-            registerPlayer(m.challenger2);
-
-            validMatches.push({
-              player1Id: m.challenger1.id,
-              player2Id: m.challenger2.id,
-              score1: m.challenger1_score,
-              score2: m.challenger2_score,
-              player1Won: !!m.challenger1_is_winner,
-              matchNumber: m.match_number,
-            });
-          }
-        }
-
-        var players = [];
-        var idx = 0;
-        for (var entry of playerMap) {
-          entry[1].index = idx++;
-          players.push(entry[1]);
-        }
-
-        return { players: players, matches: validMatches, playerMap: playerMap, tournamentInfo: tournamentInfo };
-      },
-
-      buildShareUrl: function(identifier) {
-        return 'https://digitalpool.com/tournaments/' + identifier;
-      },
-
-      corsHelp: function(identifier) {
-        return 'CORS blocked. Use the "paste JSON manually" option instead. Run this in your terminal:\n'
-          + "curl -s 'https://api-cached.digitalpool.com/' "
-          + "-H 'content-type: application/json' "
-          + '-d \'{"operationName":"tournament_brackets","variables":{"slug":"'
-          + identifier
-          + '"},"query":"'
-          + GRAPHQL_QUERY.replace(/\n/g, '\\n')
-          + '"}\'';
-      },
-    };
-  })();
-
-  window.TournamentDataSources = window.TournamentDataSources || [];
-  window.TournamentDataSources.push(DigitalPool);
-})();
-</script>
-<script>console.timeEnd('load-digitalpool.js'); console.time('load-bracketbeast.js');</script>
-<script>
-// bracketbeast.js — inlined to avoid file:// script loading delay
-(function() {
-  'use strict';
-
-  var API_ENDPOINT = 'https://bracket-beast-prod-app.azurewebsites.net/api/external/viewbracket?disableTimeZoneConversion=false';
-  var CORS_PROXY = 'https://corsproxy.io/?url=';
-
-  var BracketBeast = {
-    id: 'bracketbeast',
-    name: 'BracketBeast',
-    urlPlaceholder: 'https://player.bracketbeast.com/tournament/.../brackets/644',
-    needsRatingLookup: true,
-
-    matchesUrl: function(url) {
-      return /player\.bracketbeast\.com\/tournament\//i.test(url);
-    },
-
-    extractIdentifier: function(url) {
-      var match = url.match(/\/brackets\/(\d+)/);
-      return match ? match[1] : null;
-    },
-
-    fetchData: async function(identifier) {
-      var response = await fetch(CORS_PROXY + encodeURIComponent(API_ENDPOINT), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'tenantid': '1.',
-        },
-        body: JSON.stringify({ divisionBracketId: parseInt(identifier, 10) }),
-      });
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-      return response.json();
-    },
-
-    parseData: function(json) {
-      var tournamentInfo = {
-        name: [json.tournamentName, json.divisionName].filter(Boolean).join(' \u2014 '),
-        date: null,
-        venue: null,
-      };
-
-      var playerMap = new Map();
-      var validMatches = [];
-
-      function registerPlayer(id, name) {
-        if (!id || !name) return;
-        if (!playerMap.has(id)) {
-          playerMap.set(id, {
-            id: id,
-            name: name,
-            skillLevel: null,
-            fargoId: null,
-            place: null,
-          });
-        }
-      }
-
-      for (var ri = 0; ri < json.rounds.length; ri++) {
-        var round = json.rounds[ri];
-        for (var mi = 0; mi < round.matches.length; mi++) {
-          var m = round.matches[mi];
-
-          if (m.matchStatus !== 'WinnerPlayer1' && m.matchStatus !== 'WinnerPlayer2') continue;
-          if (!m.divisionPlayerId1 || !m.divisionPlayerId2) continue;
-          if (!m.divisionPlayer1Name || !m.divisionPlayer2Name) continue;
-          if (m.matchStatusId === 14 || m.matchStatusId === 15) continue;
-
-          var score1 = parseInt(m.divisionPlayerId1Score, 10);
-          var score2 = parseInt(m.divisionPlayerId2Score, 10);
-          if (isNaN(score1) || isNaN(score2)) continue;
-          if (score1 === 0 && score2 === 0) continue;
-
-          registerPlayer(m.divisionPlayerId1, m.divisionPlayer1Name);
-          registerPlayer(m.divisionPlayerId2, m.divisionPlayer2Name);
-
-          validMatches.push({
-            player1Id: m.divisionPlayerId1,
-            player2Id: m.divisionPlayerId2,
-            score1: score1,
-            score2: score2,
-            player1Won: m.matchStatus === 'WinnerPlayer1',
-            matchNumber: m.id,
-          });
-        }
-      }
-
-      var players = [];
-      var idx = 0;
-      for (var pEntry of playerMap) {
-        pEntry[1].index = idx++;
-        players.push(pEntry[1]);
-      }
-
-      return { players: players, matches: validMatches, playerMap: playerMap, tournamentInfo: tournamentInfo };
-    },
-
-    buildShareUrl: function(identifier) {
-      return 'https://player.bracketbeast.com/tournament/0/divisions/0/brackets/' + identifier;
-    },
-
-    corsHelp: function(identifier) {
-      var localUrl = 'http://localhost:8080/?bracketbeast=' + identifier;
-      return 'BracketBeast requires a local server. Run this in your terminal:'
-        + '\n'
-        + 'cd /tmp && git clone https://github.com/slyfox3/TournamentPerf.git 2>/dev/null; cd /tmp/TournamentPerf && git pull -q && python3 -m http.server 8080'
-        + '\n'
-        + 'Then open: ' + localUrl;
-    },
-  };
-
-  window.TournamentDataSources = window.TournamentDataSources || [];
-  window.TournamentDataSources.push(BracketBeast);
-})();
-</script>
-<script>console.timeEnd('load-bracketbeast.js');</script>
-<script>
-console.time('main-iife-to-init');
 (function() {
 'use strict';
 
@@ -804,12 +325,11 @@ window.removeUrlRow = function(slotId) {
 // Per-Slot Input Handling
 // =====================================================
 function onSlotInput(slotId) {
-  console.time('onSlotInput-' + slotId);
   const slot = slots.find(function(s) { return s.id === slotId; });
-  if (!slot) { console.log('[onSlotInput] slot not found:', slotId); return; }
+  if (!slot) return;
 
   const row = document.querySelector('.url-row[data-slot-id="' + slotId + '"]');
-  if (!row) { console.log('[onSlotInput] row not found:', slotId); return; }
+  if (!row) return;
   const url = row.querySelector('.url-input').value.trim();
 
   if (!url) {
@@ -827,12 +347,10 @@ function onSlotInput(slotId) {
   }
 
   const detected = detectSource(url);
-  if (!detected) { console.log('[onSlotInput] no source detected for:', url); return; }
-  console.log('[onSlotInput] detected source:', detected.id);
+  if (!detected) return;
 
   const identifier = detected.extractIdentifier(url);
-  if (!identifier) { console.log('[onSlotInput] no identifier extracted'); return; }
-  console.log('[onSlotInput] identifier:', identifier);
+  if (!identifier) return;
 
   if (identifier === slot.identifier) return;
 
@@ -851,10 +369,7 @@ function onSlotInput(slotId) {
   updateSlotInfo(slotId, null);
 
   updateUrlParams();
-  console.log('[onSlotInput] calling renderProgress');
   renderProgress();
-  console.timeEnd('onSlotInput-' + slotId);
-  console.log('[onSlotInput] calling fetchSlot');
   fetchSlot(slotId);
 }
 
@@ -876,7 +391,6 @@ function updateSlotInfo(slotId, text, isError) {
 }
 
 async function fetchSlot(slotId) {
-  console.time('fetchSlot-' + slotId);
   const slot = slots.find(function(s) { return s.id === slotId; });
   if (!slot || !slot.identifier) return;
 
@@ -886,19 +400,15 @@ async function fetchSlot(slotId) {
   try {
     var json, fetchMs, payloadSize;
     if (window._prefetchedData && window._prefetchedData[slot.identifier]) {
-      console.log('[fetchSlot] using prefetched data for:', slot.identifier);
       var prefetched = await window._prefetchedData[slot.identifier];
       delete window._prefetchedData[slot.identifier];
       json = prefetched.json;
       fetchMs = prefetched.fetchMs;
       payloadSize = prefetched.payloadSize;
-      console.log('[fetchSlot] prefetch took', fetchMs, 'ms (waited', Math.round(performance.now() - t0), 'ms for it)');
     } else {
-      console.log('[fetchSlot] starting API call for:', slot.identifier);
       json = await slot.source.fetchData(slot.identifier);
       fetchMs = Math.round(performance.now() - t0);
       payloadSize = JSON.stringify(json).length;
-      console.log('[fetchSlot] API returned in', fetchMs, 'ms');
     }
     const parsed = slot.source.parseData(json);
 
@@ -1142,13 +652,11 @@ function tryAggregate() {
 const SPINNER = '<span class="spinner"></span>';
 
 function renderProgress() {
-  console.log('[renderProgress] called at', Math.round(performance.now()), 'ms');
   const progressEl = document.getElementById('progress');
   const body = document.getElementById('progress-body');
 
   const activeSlots = slots.filter(function(s) { return s.identifier != null; });
   if (activeSlots.length === 0) {
-    console.log('[renderProgress] no active slots, hiding');
     progressEl.classList.add('hidden');
     return;
   }
@@ -1656,16 +1164,12 @@ window.handleSort = function(key) {
 // =====================================================
 // Init
 // =====================================================
-console.timeEnd('main-iife-to-init');
 if (window._autoLoadUrls) {
-  console.log('[init] auto-loading', window._autoLoadUrls.length, 'URLs');
   for (const url of window._autoLoadUrls) {
     window.addUrlRow(url);
   }
-  console.timeEnd('total-startup');
 } else {
   window.addUrlRow();
-  console.timeEnd('total-startup');
 }
 
 })();
