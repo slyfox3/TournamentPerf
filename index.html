@@ -203,11 +203,25 @@
 var _lmT0 = performance.now();
 var levenbergMarquardt = null;
 var lmLoadMs = null;
-var lmReady = import('https://esm.sh/ml-levenberg-marquardt@5.0.0/es2022/ml-levenberg-marquardt.mjs')
+var lmFailed = false;
+var LM_URL = 'https://esm.sh/ml-levenberg-marquardt@5.0.0/es2022/ml-levenberg-marquardt.mjs';
+function importWithRetry(url, retries, delay) {
+  return import(url).catch(function(err) {
+    if (retries <= 0) throw err;
+    return new Promise(function(r) { setTimeout(r, delay); })
+      .then(function() { return importWithRetry(url, retries - 1, delay * 2); });
+  });
+}
+var lmReady = importWithRetry(LM_URL, 2, 1000)
   .then(function(mod) {
     levenbergMarquardt = mod.levenbergMarquardt;
     lmLoadMs = Math.round(performance.now() - _lmT0);
-});
+  })
+  .catch(function(err) {
+    console.error('Failed to load math module after retries:', err);
+    lmFailed = true;
+    if (typeof renderProgress === 'function') renderProgress();
+  });
 
 // Data source abstraction
 const dataSources = window.TournamentDataSources;
@@ -648,6 +662,7 @@ function tryAggregate() {
   // Wait for optimizer module, then run optimization
   return lmReady.then(function() {
     renderProgress();
+    if (lmFailed) return;
     requestAnimationFrame(function() { setTimeout(function() { runOptimization(); }, 0); });
   });
 }
@@ -704,13 +719,17 @@ function renderProgress() {
   // Module row
   const moduleValue = levenbergMarquardt
     ? '<span class="progress-done">\u2713 ' + lmLoadMs + ' ms</span>'
-    : SPINNER;
+    : lmFailed
+      ? '<span class="progress-error">\u2717 failed to load \u2014 please refresh</span>'
+      : SPINNER;
   html += '<tr><td class="progress-label">Loading math modules</td><td class="progress-value" id="progress-module">' + moduleValue + '</td></tr>';
 
   // Optimization row
   const fargoInProgress = needsFargo && fargoProgress && fargoProgress.done < fargoProgress.total;
   let optimizeValue;
-  if (fargoInProgress) {
+  if (lmFailed) {
+    optimizeValue = '<span class="progress-error">\u2717 math module unavailable</span>';
+  } else if (fargoInProgress) {
     optimizeValue = '<span class="progress-pulse">\u23F8 waiting for official ratings</span>';
   } else if (allSlotsFilled()) {
     optimizeValue = SPINNER;
