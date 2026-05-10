@@ -185,8 +185,12 @@
             if (!m.challenger1 || !m.challenger2) continue;
             if (m.challenger1_is_forfeit || m.challenger1_is_withdraw) continue;
             if (m.challenger2_is_forfeit || m.challenger2_is_withdraw) continue;
-            if (m.challenger1_score == null || m.challenger2_score == null) continue;
-            if (m.challenger1_score === 0 && m.challenger2_score === 0) continue;
+            var s1 = m.challenger1_score;
+            var s2 = m.challenger2_score;
+            if (s1 == null && s2 != null && m.challenger2_is_winner) s1 = 0;
+            if (s2 == null && s1 != null && m.challenger1_is_winner) s2 = 0;
+            if (s1 == null || s2 == null) continue;
+            if (s1 === 0 && s2 === 0) continue;
 
             registerPlayer(m.challenger1);
             registerPlayer(m.challenger2);
@@ -194,8 +198,8 @@
             validMatches.push({
               player1Id: m.challenger1.id,
               player2Id: m.challenger2.id,
-              score1: m.challenger1_score,
-              score2: m.challenger2_score,
+              score1: s1,
+              score2: s2,
               player1Won: !!m.challenger1_is_winner,
               matchNumber: m.match_number,
             });
