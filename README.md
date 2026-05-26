@@ -45,7 +45,7 @@ If the ratings perfectly predict the outcome, the residual is zero. The optimize
 
 Without any constraint, the optimizer could shift all ratings up or down by the same amount and produce identical residuals. Official ratings anchor the system.
 
-For each player with an official Fargo rating, a "ghost match" residual is added: a simulated match against a phantom opponent at the player's official rating. The weight of this ghost match (called **stickiness**) is set to 20% of the average rack count played per player, so official ratings gently anchor the optimization without overpowering actual results.
+For each player with an official Fargo rating, a "ghost match" residual is added: a simulated match against a phantom opponent at the player's official rating, split evenly (half wins, half losses). The weight of this ghost match (called **stickiness**) is set to the 20th percentile (p20) of per-player rack counts in the tournament. This scales the anchor naturally with tournament size — larger tournaments with more racks get proportionally stronger anchoring, while small events stay light.
 
 Players without an official rating get no prior — their performance rating is determined entirely by match results.
 

@@ -638,8 +638,19 @@ function tryAggregate() {
   cachedParsedData = aggregated;
   manualRatings.clear();
 
-  // Build preliminary table
+  // Compute p20 rack count as stickiness for prior anchoring
   const { players, matches, playerMap } = aggregated;
+  const playerRacks = new Array(players.length).fill(0);
+  for (const m of matches) {
+    const racks = m.score1 + m.score2;
+    playerRacks[playerMap.get(m.player1Id).index] += racks;
+    playerRacks[playerMap.get(m.player2Id).index] += racks;
+  }
+  const sortedRacks = playerRacks.slice().sort(function(a, b) { return a - b; });
+  var lo = Math.floor((sortedRacks.length - 1) * 0.2);
+  cachedParsedData.stickiness = sortedRacks[lo];
+
+  // Build preliminary table
   const playerMatchesMap = new Map();
   for (const m of matches) {
     const p1 = playerMap.get(m.player1Id);
@@ -810,21 +821,7 @@ function buildResidualDescriptors(players, matches, playerMap) {
     });
   }
 
-  const playerRacks = new Array(players.length).fill(0);
-  for (const m of matches) {
-    const racks = m.score1 + m.score2;
-    playerRacks[playerMap.get(m.player1Id).index] += racks;
-    playerRacks[playerMap.get(m.player2Id).index] += racks;
-  }
-  let totalRacksWithPrior = 0;
-  let countWithPrior = 0;
-  for (const p of players) {
-    if (p.skillLevel != null && p.skillLevel >= 0) {
-      totalRacksWithPrior += playerRacks[p.index];
-      countWithPrior++;
-    }
-  }
-  const stickiness = countWithPrior > 0 ? totalRacksWithPrior / countWithPrior * 0.2 : 1;
+  const stickiness = cachedParsedData.stickiness;
 
   for (const p of players) {
     if (p.skillLevel != null && p.skillLevel >= 0) {
