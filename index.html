@@ -641,11 +641,15 @@ function tryAggregate() {
   // Compute p20 rack count as stickiness for prior anchoring
   const { players, matches, playerMap } = aggregated;
   const playerRacks = new Array(players.length).fill(0);
+  const playerWonRacks = new Array(players.length).fill(0);
   for (const m of matches) {
     const racks = m.score1 + m.score2;
     playerRacks[playerMap.get(m.player1Id).index] += racks;
     playerRacks[playerMap.get(m.player2Id).index] += racks;
+    playerWonRacks[playerMap.get(m.player1Id).index] += m.score1;
+    playerWonRacks[playerMap.get(m.player2Id).index] += m.score2;
   }
+  cachedParsedData.playerWonRacks = playerWonRacks;
   const sortedRacks = playerRacks.slice().sort(function(a, b) { return a - b; });
   var lo = Math.floor((sortedRacks.length - 1) * 0.2);
   cachedParsedData.stickiness = sortedRacks[lo];
@@ -822,6 +826,7 @@ function buildResidualDescriptors(players, matches, playerMap) {
   }
 
   const stickiness = cachedParsedData.stickiness;
+  const playerWonRacks = cachedParsedData.playerWonRacks;
 
   for (const p of players) {
     if (p.skillLevel != null && p.skillLevel >= 0) {
@@ -830,6 +835,13 @@ function buildResidualDescriptors(players, matches, playerMap) {
         playerIndex: p.index,
         priorRating: p.skillLevel,
         stickiness: stickiness,
+      });
+    } else if (playerWonRacks[p.index] === 0) {
+      residuals.push({
+        type: 'prior',
+        playerIndex: p.index,
+        priorRating: 400,
+        stickiness: 1,
       });
     }
   }
