@@ -204,21 +204,36 @@ var _lmT0 = performance.now();
 var levenbergMarquardt = null;
 var lmLoadMs = null;
 var lmFailed = false;
-var LM_URL = 'https://esm.sh/ml-levenberg-marquardt@5.0.0/es2022/ml-levenberg-marquardt.mjs';
-function importWithRetry(url, retries, delay) {
-  return import(url).catch(function(err) {
+var LM_CDNS = [
+  'https://esm.sh/ml-levenberg-marquardt@5.0.0/es2022/ml-levenberg-marquardt.mjs',
+  'https://esm.sh/ml-levenberg-marquardt@5.0.0/es2022/ml-levenberg-marquardt.bundle.mjs'
+];
+var lmRetryAttempt = 0;
+var lmCurrentCdn = LM_CDNS[0];
+var LM_MAX_RETRIES = 5;
+var LM_RETRY_DELAY = 300;
+function importWithRetry(retries, delay) {
+  lmCurrentCdn = LM_CDNS[lmRetryAttempt % LM_CDNS.length];
+  return import(lmCurrentCdn).catch(function(err) {
+    console.warn('Math module attempt ' + (lmRetryAttempt + 1) + ' failed (' + lmCurrentCdn + '):', err.message);
+    lmRetryAttempt++;
+    lmCurrentCdn = LM_CDNS[lmRetryAttempt % LM_CDNS.length];
+    if (typeof renderProgress === 'function') renderProgress();
     if (retries <= 0) throw err;
     return new Promise(function(r) { setTimeout(r, delay); })
-      .then(function() { return importWithRetry(url, retries - 1, delay * 2); });
+      .then(function() { return importWithRetry(retries - 1, delay); });
   });
 }
-var lmReady = importWithRetry(LM_URL, 2, 1000)
+var lmReady = importWithRetry(LM_MAX_RETRIES, LM_RETRY_DELAY)
   .then(function(mod) {
+    if (typeof mod.levenbergMarquardt !== 'function') {
+      throw new Error('Module loaded but levenbergMarquardt export is missing');
+    }
     levenbergMarquardt = mod.levenbergMarquardt;
     lmLoadMs = Math.round(performance.now() - _lmT0);
   })
   .catch(function(err) {
-    console.error('Failed to load math module after retries:', err);
+    console.error('Failed to load math module after ' + (LM_MAX_RETRIES + 1) + ' attempts:', err);
     lmFailed = true;
     if (typeof renderProgress === 'function') renderProgress();
   });
@@ -717,11 +732,17 @@ function renderProgress() {
   }
 
   // Module row
-  const moduleValue = levenbergMarquardt
-    ? '<span class="progress-done">\u2713 ' + lmLoadMs + ' ms</span>'
-    : lmFailed
-      ? '<span class="progress-error">\u2717 failed to load \u2014 please refresh</span>'
-      : SPINNER;
+  var moduleValue;
+  if (levenbergMarquardt) {
+    moduleValue = '<span class="progress-done">\u2713 ' + lmLoadMs + ' ms</span>';
+  } else if (lmFailed) {
+    moduleValue = '<span class="progress-error">\u2717 failed after ' + (LM_MAX_RETRIES + 1) + ' attempts \u2014 please refresh</span>';
+  } else if (lmRetryAttempt > 0) {
+    var cdnName = lmCurrentCdn.indexOf('.bundle.') >= 0 ? 'esm.sh (bundled)' : 'esm.sh';
+    moduleValue = SPINNER + ' retry ' + lmRetryAttempt + '/' + LM_MAX_RETRIES + ' via ' + cdnName + '\u2026';
+  } else {
+    moduleValue = SPINNER;
+  }
   html += '<tr><td class="progress-label">Loading math modules</td><td class="progress-value" id="progress-module">' + moduleValue + '</td></tr>';
 
   // Optimization row
