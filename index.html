@@ -89,6 +89,10 @@
   @keyframes row-highlight { 0%, 10%, 20%, 30% { background: #3b82f6aa; } 5%, 15%, 25% { background: transparent; } 35% { background: #3b82f6aa; } 100% { background: transparent; } }
   tr.player-row.highlight td { animation: row-highlight 6s ease-out; }
   td.name-cell { cursor: pointer; }
+  .nav-back-pill { position: fixed; bottom: 24px; right: 24px; background: #1e293b; border: 1px solid #334155; border-radius: 20px; padding: 8px 16px; color: #60a5fa; font-size: 13px; cursor: pointer; display: none; align-items: center; gap: 6px; z-index: 999; box-shadow: 0 4px 12px rgba(0,0,0,0.4); transition: opacity 0.2s; min-height: 44px; }
+  .nav-back-pill:hover { background: #334155; }
+  .nav-back-pill svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .nav-back-pill .nav-depth { background: #60a5fa; color: #0f172a; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-left: 4px; }
 </style>
 </head>
 <body>
@@ -192,6 +196,12 @@
   <pre id="debug-output" class="hidden"></pre>
 </div>
 
+<div class="nav-back-pill" id="nav-back-pill" role="button" aria-label="Navigate back" tabindex="0">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+  <span id="nav-back-name"></span>
+  <span class="nav-depth" id="nav-back-depth" style="display:none"></span>
+</div>
+
 <script src="fargorate.js"></script>
 <script src="digitalpool.js"></script>
 <script src="bracketbeast.js"></script>
@@ -264,6 +274,8 @@ let cachedRows = [];
 let currentSort = { key: 'optimized', dir: -1 };
 let expandedPlayers = new Set();
 let manualRatings = new Map();
+var navHistory = [];
+var NAV_HISTORY_MAX = 20;
 
 // =====================================================
 // URL Row Management
@@ -632,6 +644,8 @@ function tryAggregate() {
     document.getElementById('results').classList.add('hidden');
     document.getElementById('debug').classList.add('hidden');
     cachedParsedData = null;
+    navHistory = [];
+    updateNavPill();
     return;
   }
 
@@ -1134,22 +1148,6 @@ function renderTable() {
     });
   });
 
-  // Attach click handler for opponent name links in match details
-  resultsDiv.addEventListener('click', function(e) {
-    var oppLink = e.target.closest('.match-opponent-link');
-    if (!oppLink) return;
-    e.stopPropagation();
-    var targetName = oppLink.dataset.player;
-    var targetRow = resultsDiv.querySelector('tr.player-row[data-player-name="' + CSS.escape(targetName) + '"]');
-    if (!targetRow) return;
-    // Scroll and highlight
-    targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    targetRow.classList.remove('highlight');
-    void targetRow.offsetWidth;
-    targetRow.classList.add('highlight');
-    setTimeout(function() { targetRow.classList.remove('highlight'); }, 6000);
-  });
-
   // Attach input listeners for rating inputs
   resultsDiv.querySelectorAll('.rating-input').forEach(function(input) {
     input.addEventListener('input', function() {
@@ -1198,6 +1196,76 @@ window.handleReoptimize = function() {
 window.toggleDebug = function() {
   document.getElementById('debug-output').classList.toggle('hidden');
 };
+
+function updateNavPill() {
+  var pill = document.getElementById('nav-back-pill');
+  if (navHistory.length === 0) {
+    pill.style.display = 'none';
+    return;
+  }
+  pill.style.display = 'flex';
+  document.getElementById('nav-back-name').textContent = navHistory[navHistory.length - 1];
+  var depthEl = document.getElementById('nav-back-depth');
+  if (navHistory.length > 1) {
+    depthEl.textContent = navHistory.length;
+    depthEl.style.display = '';
+  } else {
+    depthEl.style.display = 'none';
+  }
+}
+
+function scrollToPlayer(name) {
+  var resultsDiv = document.getElementById('results');
+  var row = resultsDiv.querySelector('tr.player-row[data-player-name="' + CSS.escape(name) + '"]');
+  if (!row) return false;
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  row.classList.remove('highlight');
+  void row.offsetWidth;
+  row.classList.add('highlight');
+  setTimeout(function() { row.classList.remove('highlight'); }, 6000);
+  row.setAttribute('tabindex', '-1');
+  row.focus({ preventScroll: true });
+  return true;
+}
+
+function navBack() {
+  while (navHistory.length > 0) {
+    var name = navHistory.pop();
+    if (scrollToPlayer(name)) break;
+  }
+  updateNavPill();
+}
+
+document.getElementById('nav-back-pill').addEventListener('click', navBack);
+document.getElementById('nav-back-pill').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navBack(); }
+});
+
+// Delegated click handler for opponent name links — attached once, not per renderTable() call
+document.getElementById('results').addEventListener('click', function(e) {
+  var oppLink = e.target.closest('.match-opponent-link');
+  if (!oppLink) return;
+  e.stopPropagation();
+  var sourceRow = oppLink.closest('tr.detail-row');
+  if (sourceRow) {
+    var idx = sourceRow.dataset.detail;
+    var resultsDiv = document.getElementById('results');
+    var playerRow = resultsDiv.querySelector('tr.player-row[data-row="' + idx + '"]');
+    if (playerRow) {
+      navHistory.push(playerRow.dataset.playerName);
+      if (navHistory.length > NAV_HISTORY_MAX) navHistory.shift();
+      updateNavPill();
+    }
+  }
+  var targetName = oppLink.dataset.player;
+  scrollToPlayer(targetName);
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === ',' && !e.target.closest('input, textarea, [contenteditable]')) {
+    if (navHistory.length > 0) { e.preventDefault(); navBack(); }
+  }
+});
 
 window.handleSort = function(key) {
   if (currentSort.key === key) {
