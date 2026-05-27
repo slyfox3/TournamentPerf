@@ -92,7 +92,6 @@
   .nav-back-pill { position: fixed; bottom: 24px; right: 24px; background: #1e293b; border: 1px solid #334155; border-radius: 20px; padding: 8px 16px; color: #60a5fa; font-size: 13px; cursor: pointer; display: none; align-items: center; gap: 6px; z-index: 999; box-shadow: 0 4px 12px rgba(0,0,0,0.4); transition: opacity 0.2s; min-height: 44px; }
   .nav-back-pill:hover { background: #334155; }
   .nav-back-pill svg { width: 14px; height: 14px; flex-shrink: 0; }
-  .nav-back-pill .nav-depth { background: #60a5fa; color: #0f172a; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-left: 4px; }
 </style>
 </head>
 <body>
@@ -199,7 +198,6 @@
 <div class="nav-back-pill" id="nav-back-pill" role="button" aria-label="Navigate back" tabindex="0">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
   <span id="nav-back-name"></span>
-  <span class="nav-depth" id="nav-back-depth" style="display:none"></span>
 </div>
 
 <script src="fargorate.js"></script>
@@ -1205,13 +1203,6 @@ function updateNavPill() {
   }
   pill.style.display = 'flex';
   document.getElementById('nav-back-name').textContent = navHistory[navHistory.length - 1];
-  var depthEl = document.getElementById('nav-back-depth');
-  if (navHistory.length > 1) {
-    depthEl.textContent = navHistory.length;
-    depthEl.style.display = '';
-  } else {
-    depthEl.style.display = 'none';
-  }
 }
 
 function scrollToPlayer(name) {
@@ -1252,8 +1243,11 @@ document.getElementById('results').addEventListener('click', function(e) {
     var resultsDiv = document.getElementById('results');
     var playerRow = resultsDiv.querySelector('tr.player-row[data-row="' + idx + '"]');
     if (playerRow) {
-      navHistory.push(playerRow.dataset.playerName);
-      if (navHistory.length > NAV_HISTORY_MAX) navHistory.shift();
+      var sourceName = playerRow.dataset.playerName;
+      if (navHistory[navHistory.length - 1] !== sourceName) {
+        navHistory.push(sourceName);
+        if (navHistory.length > NAV_HISTORY_MAX) navHistory.shift();
+      }
       updateNavPill();
     }
   }
