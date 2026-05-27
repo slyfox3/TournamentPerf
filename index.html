@@ -1142,13 +1142,6 @@ function renderTable() {
     var targetName = oppLink.dataset.player;
     var targetRow = resultsDiv.querySelector('tr.player-row[data-player-name="' + CSS.escape(targetName) + '"]');
     if (!targetRow) return;
-    // Expand the target player's detail row
-    var targetIdx = targetRow.dataset.row;
-    var targetDetail = resultsDiv.querySelector('tr.detail-row[data-detail="' + targetIdx + '"]');
-    if (targetDetail && targetDetail.style.display === 'none') {
-      targetDetail.style.display = '';
-      expandedPlayers.add(targetName);
-    }
     // Scroll and highlight
     targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
     targetRow.classList.remove('highlight');
