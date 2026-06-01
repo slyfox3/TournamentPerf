@@ -155,6 +155,10 @@
     params.getAll('bracketbeast').forEach(function(v) {
       entries.push('https://player.bracketbeast.com/tournament/0/divisions/0/brackets/' + v);
     });
+    var wntSlugs = params.getAll('wnt');
+    wntSlugs.forEach(function(v) {
+      entries.push('https://www.wntlivescores.com/events/' + v);
+    });
     if (entries.length > 0) {
       window._autoLoadUrls = entries;
       var progressEl = document.getElementById('progress');
@@ -165,6 +169,92 @@
       }
       body.innerHTML = html;
       progressEl.classList.remove('hidden');
+
+      // Show WNT cookie modal immediately — don't wait for external scripts
+      if (wntSlugs.length > 0 && !window._wntCookieReady) {
+        window._wntCookieReady = new Promise(function(resolve) {
+          var slug = wntSlugs[0];
+          var eventUrl = 'https://www.wntlivescores.com/events/' + slug + '/matches-list/1';
+          var overlay = document.createElement('div');
+          overlay.className = 'modal-overlay';
+          overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000;';
+          var modal = document.createElement('div');
+          modal.style.cssText = 'background:#1e293b;border-radius:10px;padding:28px 32px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 8px 30px rgba(0,0,0,0.4);position:relative;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+
+          // Build modal content using DOM APIs to avoid XSS from URL params
+          var h2 = document.createElement('h2');
+          h2.style.cssText = 'margin:0 0 8px 0;font-size:18px;color:#f1f5f9;';
+          h2.textContent = 'WNT Live Scores Authentication';
+          modal.appendChild(h2);
+
+          var p = document.createElement('p');
+          p.style.cssText = 'font-size:13px;color:#94a3b8;margin:0 0 16px 0;line-height:1.6;';
+          p.textContent = 'WNT requires a free account. Log in and then:';
+          modal.appendChild(p);
+
+          var ol = document.createElement('ol');
+          ol.style.cssText = 'font-size:13px;color:#94a3b8;margin:0 0 16px 0;line-height:2;padding-left:20px;';
+
+          var li1 = document.createElement('li');
+          li1.appendChild(document.createTextNode('Open '));
+          var link = document.createElement('a');
+          link.href = eventUrl;
+          link.target = '_blank';
+          link.style.color = '#60a5fa';
+          link.textContent = eventUrl;
+          li1.appendChild(link);
+          li1.appendChild(document.createTextNode(' in Chrome'));
+          ol.appendChild(li1);
+
+          var steps = [
+            'Open DevTools (F12 or Cmd+Option+I)',
+            'Go to the Network tab',
+            'Refresh the page (Cmd+R)',
+            'Right-click the first request (named "1") → Copy → Copy as cURL',
+            'Paste below'
+          ];
+          for (var si = 0; si < steps.length; si++) {
+            var li = document.createElement('li');
+            li.textContent = steps[si];
+            ol.appendChild(li);
+          }
+          modal.appendChild(ol);
+
+          // The rest of the modal uses static content (no user input), safe to use innerHTML
+          var formHtml = '<textarea id="wnt-curl-input" style="width:100%;height:120px;background:#0f172a;color:#e2e8f0;border:1px solid #475569;border-radius:4px;padding:8px;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;" placeholder="curl \'https://www.wntlivescores.com/events/...\'  -H \'...\' -b \'wnt.live.sid=...\' ..."></textarea>'
+            + '<div id="wnt-curl-error" style="color:#fca5a5;font-size:12px;margin-top:6px;display:none;"></div>'
+            + '<div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">'
+            + '<button id="wnt-curl-cancel" style="padding:8px 16px;border-radius:4px;background:#334155;color:#e2e8f0;border:none;cursor:pointer;font-size:13px;">Cancel</button>'
+            + '<button id="wnt-curl-submit" style="padding:8px 16px;border-radius:4px;background:#2563eb;color:white;border:none;cursor:pointer;font-size:13px;font-weight:600;">Connect</button>'
+            + '</div>';
+          var formContainer = document.createElement('div');
+          formContainer.innerHTML = formHtml;
+          modal.appendChild(formContainer);
+
+          overlay.appendChild(modal);
+          document.body.appendChild(overlay);
+          document.getElementById('wnt-curl-cancel').onclick = function() {
+            document.body.removeChild(overlay);
+            resolve(null);
+          };
+          overlay.onclick = function(e) {
+            if (e.target === overlay) { document.body.removeChild(overlay); resolve(null); }
+          };
+          document.getElementById('wnt-curl-submit').onclick = function() {
+            var curlText = document.getElementById('wnt-curl-input').value.trim();
+            var match = curlText.match(/wnt\.live\.sid=([^\s;'"]+)/);
+            if (!match) {
+              var errEl = document.getElementById('wnt-curl-error');
+              errEl.textContent = 'Could not find wnt.live.sid cookie. Make sure you copied the full curl command.';
+              errEl.style.display = 'block';
+              return;
+            }
+            document.body.removeChild(overlay);
+            resolve('wnt.live.sid=' + match[1]);
+          };
+          setTimeout(function() { document.getElementById('wnt-curl-input').focus(); }, 50);
+        });
+      }
 
       // Prefetch DigitalPool data immediately — runs in parallel with script loading
       if (dpSlugs.length > 0) {
@@ -206,9 +296,21 @@
 <script src="fargorate.js"></script>
 <script src="digitalpool.js"></script>
 <script src="bracketbeast.js"></script>
+<script src="wnt.js"></script>
 <script>
 (function() {
 'use strict';
+
+// HTML escaping utility to prevent XSS when inserting untrusted strings into innerHTML
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 // Start loading optimizer module now (after local scripts, to avoid blocking them)
 var _lmT0 = performance.now();
@@ -449,7 +551,8 @@ async function fetchSlot(slotId) {
       payloadSize = prefetched.payloadSize;
     } else {
       json = await slot.source.fetchData(slot.identifier);
-      fetchMs = Math.round(performance.now() - t0);
+      var fetchT0 = slot.source._fetchT0 || t0;
+      fetchMs = Math.round(performance.now() - fetchT0);
       payloadSize = JSON.stringify(json).length;
     }
     const parsed = slot.source.parseData(json);
@@ -474,10 +577,10 @@ async function fetchSlot(slotId) {
     } else if (slot.source.id === 'bracketbeast') {
       bracketLink = ' <a href="' + slot.source.buildShareUrl(slot.identifier) + '" target="_blank" style="font-weight:400;margin-left:12px;">Bracket &rarr;</a>';
     }
-    const line1 = (info.name || 'Tournament') + bracketLink;
+    const line1 = escapeHtml(info.name || 'Tournament') + bracketLink;
     const detail = [];
-    if (info.date) detail.push(info.date);
-    if (info.venue) detail.push(info.venue);
+    if (info.date) detail.push(escapeHtml(info.date));
+    if (info.venue) detail.push(escapeHtml(info.venue));
     detail.push(parsed.players.length + ' players');
     updateSlotInfo(slotId, line1 + '<br>' + detail.join(' \u00B7 '));
 
@@ -494,8 +597,9 @@ async function fetchSlot(slotId) {
     var errMsg = 'Failed to fetch tournament data.';
     if (slot.source.corsHelp) {
       var helpText = slot.source.corsHelp(slot.identifier);
-      // Make URLs in the help text clickable
-      helpText = helpText.replace(/(https?:\/\/localhost[^\s<]*)/g, '<a href="$1" target="_blank">$1</a>');
+      // Escape the entire help text first, then make localhost URLs clickable
+      helpText = escapeHtml(helpText);
+      helpText = helpText.replace(/(https?:\/\/localhost[^\s&]*)/g, '<a href="$1" target="_blank">$1</a>');
       errMsg += '<br><code style="font-size:11px;word-break:break-all;display:block;margin-top:4px;background:#f1f5f9;padding:4px 6px;border-radius:3px">'
         + helpText.replace(/\n/g, '<br>') + '</code>';
     }
@@ -734,7 +838,7 @@ function renderProgress() {
   for (let i = 0; i < activeSlots.length; i++) {
     const s = activeSlots[i];
     const label = s.parsed && s.parsed.tournamentInfo.name
-      ? 'Loading ' + s.parsed.tournamentInfo.name
+      ? 'Loading ' + escapeHtml(s.parsed.tournamentInfo.name)
       : 'Loading tournament ' + (i + 1);
     let value;
     if (s.parsed) {
@@ -1025,7 +1129,7 @@ function formatPlace(place) {
 
 function renderMatchLine(m) {
   const oppPlace = m.opponentPlace ? ' (' + formatPlace(m.opponentPlace) + ')' : '';
-  const oppLink = '<span class="match-opponent-link" data-player="' + m.opponent.replace(/"/g, '&quot;') + '">' + m.opponent + '</span>';
+  const oppLink = '<span class="match-opponent-link" data-player="' + escapeHtml(m.opponent) + '">' + escapeHtml(m.opponent) + '</span>';
   if (m.isChip) {
     return '<div><span class="match-result"></span><span class="match-score">' + m.myScore + '-' + m.oppScore + '</span> vs ' + oppLink + oppPlace + '</div>';
   }
@@ -1086,7 +1190,7 @@ function renderTable() {
 
   sorted.forEach(function(r, i) {
     const currentVal = manualRatings.has(r.name) ? manualRatings.get(r.name) : (r.prior != null && r.prior >= 0 ? r.prior : '');
-    const priorStr = '<input type="number" class="rating-input" data-player="' + r.name.replace(/"/g, '&quot;') + '" placeholder="\u2014" value="' + currentVal + '">';
+    const priorStr = '<input type="number" class="rating-input" data-player="' + escapeHtml(r.name) + '" placeholder="\u2014" value="' + currentVal + '">';
     let deltaStr;
     if (r.delta == null) {
       deltaStr = '<span class="no-prior">--</span>';
@@ -1097,9 +1201,9 @@ function renderTable() {
     } else {
       deltaStr = '0';
     }
-    html += '<tr class="player-row" data-row="' + i + '" data-player-name="' + r.name.replace(/"/g, '&quot;') + '">'
+    html += '<tr class="player-row" data-row="' + i + '" data-player-name="' + escapeHtml(r.name) + '">'
       + '<td class="num">' + (i + 1) + '</td>'
-      + '<td class="name-cell">' + r.name + '</td>'
+      + '<td class="name-cell">' + escapeHtml(r.name) + '</td>'
       + (multiTournament ? '' : '<td class="num">' + (r.place || '<span class="no-prior">--</span>') + '</td>')
       + '<td class="num">' + priorStr + '</td>'
       + '<td class="num">' + (r.optimized != null ? r.optimized : '<span class="no-prior">\u2026</span>') + '</td>'
@@ -1119,7 +1223,7 @@ function renderTable() {
       for (const [tName, tMatches] of byTournament) {
         const place = tMatches[0].myPlace;
         const placeStr = place ? '<div class="match-tournament" style="font-weight:400;">Finished ' + formatPlace(place) + '</div>' : '';
-        matchHtml += '<div class="match-tournament">' + tName + '</div>' + placeStr;
+        matchHtml += '<div class="match-tournament">' + escapeHtml(tName) + '</div>' + placeStr;
         for (const m of tMatches) matchHtml += renderMatchLine(m);
       }
     } else {
