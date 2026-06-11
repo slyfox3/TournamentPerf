@@ -124,7 +124,7 @@
       <dt>Column sorting</dt>
       <dd>Click any column header to sort by that column. Click again to reverse the sort order.</dd>
       <dt>Official Rating</dt>
-      <dd>Editable. Type a new value to override a player's official rating and re-run the optimization. Useful when a player's Fargo rating is missing or outdated.</dd>
+      <dd>Editable. Type a new value to override a player's official rating and re-run the optimization. Clear the field to run the optimization as if the player has no official rating. Useful when a player's Fargo rating is missing or outdated.</dd>
       <dt>Perf Rating</dt>
       <dd>The computed performance rating for each player, based on how the entire tournament unfolded. Higher means stronger performance.</dd>
       <dt>Delta</dt>
@@ -1189,7 +1189,10 @@ function renderTable() {
   html += '</tr></thead><tbody>';
 
   sorted.forEach(function(r, i) {
-    const currentVal = manualRatings.has(r.name) ? manualRatings.get(r.name) : (r.prior != null && r.prior >= 0 ? r.prior : '');
+    const manualVal = manualRatings.has(r.name) ? manualRatings.get(r.name) : undefined;
+    const currentVal = manualVal !== undefined
+      ? (manualVal == null ? '' : manualVal)
+      : (r.prior != null && r.prior >= 0 ? r.prior : '');
     const priorStr = '<input type="number" class="rating-input" data-player="' + escapeHtml(r.name) + '" placeholder="\u2014" value="' + currentVal + '">';
     let deltaStr;
     if (r.delta == null) {
@@ -1260,8 +1263,19 @@ function renderTable() {
       const val = input.value.trim();
       const row = cachedRows.find(function(r) { return r.name === name; });
       const original = row ? row.prior : null;
+      const originalMissing = !(original != null && original >= 0);
+      if (val === '') {
+        // Cleared: treat as a missing official rating override (null sentinel),
+        // so the optimization runs as if the player has no official rating.
+        if (originalMissing) {
+          manualRatings.delete(name);
+        } else {
+          manualRatings.set(name, null);
+        }
+        return; // re-optimize on blur to avoid thrashing mid-edit
+      }
       const numVal = parseInt(val, 10);
-      if (val !== '' && numVal !== original) {
+      if (numVal !== original) {
         manualRatings.set(name, numVal);
       } else {
         manualRatings.delete(name);
