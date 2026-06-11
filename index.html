@@ -377,6 +377,7 @@ let cachedRows = [];
 let currentSort = { key: 'optimized', dir: -1 };
 let expandedPlayers = new Set();
 let manualRatings = new Map();
+var pendingRatingHighlights = []; // player names to blink after a rating-edit re-optimization
 var navHistory = [];
 var NAV_HISTORY_MAX = 20;
 
@@ -1087,6 +1088,22 @@ function displayResults(players, result) {
   expandedPlayers.clear();
   renderTable();
 
+  // Blink any players whose rating was just edited — they likely moved in the sort.
+  // Scroll to follow the first one, but don't steal focus from the rating input
+  // (re-optimization can fire while the user is still typing in it).
+  if (pendingRatingHighlights.length > 0) {
+    const names = pendingRatingHighlights;
+    pendingRatingHighlights = [];
+    names.forEach(function(name, i) {
+      if (i === 0) {
+        const resultsDiv = document.getElementById('results');
+        const row = resultsDiv.querySelector('tr.player-row[data-player-name="' + CSS.escape(name) + '"]');
+        if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      blinkPlayerRow(name);
+    });
+  }
+
   const priorResidual = result.residuals.find(function(r) { return r.type === 'prior'; });
   const debugOutput = document.getElementById('debug-output');
   debugOutput.textContent = JSON.stringify({
@@ -1298,6 +1315,8 @@ function renderTable() {
 // =====================================================
 window.handleReoptimize = function() {
   if (!cachedParsedData) return;
+  // Remember which players were edited so we can blink them once the table re-sorts
+  pendingRatingHighlights = Array.from(manualRatings.keys());
   for (const [name, rating] of manualRatings) {
     for (const p of cachedParsedData.players) {
       if (p.name === name) {
@@ -1326,15 +1345,23 @@ function updateNavPill() {
   document.getElementById('nav-back-name').textContent = navHistory[navHistory.length - 1];
 }
 
+function blinkPlayerRow(name) {
+  var resultsDiv = document.getElementById('results');
+  var row = resultsDiv.querySelector('tr.player-row[data-player-name="' + CSS.escape(name) + '"]');
+  if (!row) return false;
+  row.classList.remove('highlight');
+  void row.offsetWidth;
+  row.classList.add('highlight');
+  setTimeout(function() { row.classList.remove('highlight'); }, 6000);
+  return true;
+}
+
 function scrollToPlayer(name) {
   var resultsDiv = document.getElementById('results');
   var row = resultsDiv.querySelector('tr.player-row[data-player-name="' + CSS.escape(name) + '"]');
   if (!row) return false;
   row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  row.classList.remove('highlight');
-  void row.offsetWidth;
-  row.classList.add('highlight');
-  setTimeout(function() { row.classList.remove('highlight'); }, 6000);
+  blinkPlayerRow(name);
   row.setAttribute('tabindex', '-1');
   row.focus({ preventScroll: true });
   return true;
