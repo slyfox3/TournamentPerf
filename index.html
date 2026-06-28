@@ -955,6 +955,7 @@ function buildResidualDescriptors(players, matches, playerMap) {
         playerIndex: p.index,
         priorRating: p.skillLevel,
         stickiness: stickiness,
+        robustWeight: 1, // Cauchy IRLS weight on the official-rating anchor only
       });
     } else if (playerWonRacks[p.index] === 0) {
       residuals.push({
@@ -962,6 +963,7 @@ function buildResidualDescriptors(players, matches, playerMap) {
         playerIndex: p.index,
         priorRating: 400,
         stickiness: 1,
+        robustWeight: 1, // Cauchy IRLS weight on the official-rating anchor only
       });
     }
   }
@@ -978,17 +980,63 @@ function computeResidual(params, residual) {
     const totalRacks = residual.score1 + residual.score2;
     return residual.score1 - totalRacks * pA;
   } else {
-    const Ra = params[residual.playerIndex];
-    const Rb = residual.priorRating;
-    const ratio = Math.pow(2, (Ra - Rb) / 100);
-    const pA = ratio / (1 + ratio);
-    const totalRacks = residual.stickiness;
-    return residual.stickiness / 2 - totalRacks * pA;
+    // Raw (unweighted) prior residual, then apply the Cauchy IRLS weight.
+    // Only the 'prior' (official-rating anchor) residual is ever reweighted;
+    // 'match' residuals above are plain, unweighted L2.
+    const raw = computeRawPriorResidual(params, residual);
+    const w = (residual.robustWeight != null) ? residual.robustWeight : 1;
+    return raw * Math.sqrt(w);
   }
 }
 
-function optimize(players, matches, playerMap, initialValues, maxIterations) {
-  const residuals = buildResidualDescriptors(players, matches, playerMap);
+// Raw (unweighted) value of a 'prior' anchor residual — used both by
+// computeResidual (before applying sqrt(robustWeight)) and by the IRLS loop
+// when recomputing Cauchy weights from the latest solution.
+function computeRawPriorResidual(params, residual) {
+  const Ra = params[residual.playerIndex];
+  const Rb = residual.priorRating;
+  const ratio = Math.pow(2, (Ra - Rb) / 100);
+  const pA = ratio / (1 + ratio);
+  const totalRacks = residual.stickiness;
+  return residual.stickiness / 2 - totalRacks * pA;
+}
+
+// Cauchy / Lorentzian IRLS reweighting of the PRIOR residuals only.
+// Recomputes each prior residual's robustWeight from its raw value using a
+// MAD-based robust scale. Returns { scale, maxWeightChange }.
+// c ≈ 2.385 is the standard Cauchy tuning constant for ~95% efficiency.
+const CAUCHY_C = 2.385;
+function updateCauchyWeights(params, residuals) {
+  const priors = residuals.filter(function(r) { return r.type === 'prior'; });
+  if (priors.length === 0) return { scale: 0, maxWeightChange: 0 };
+
+  // Raw absolute residuals for the MAD-based robust scale.
+  const absRaw = priors.map(function(r) { return Math.abs(computeRawPriorResidual(params, r)); });
+  const sortedAbs = absRaw.slice().sort(function(a, b) { return a - b; });
+  const mid = Math.floor(sortedAbs.length / 2);
+  const median = sortedAbs.length % 2 === 0
+    ? (sortedAbs[mid - 1] + sortedAbs[mid]) / 2
+    : sortedAbs[mid];
+  let scale = 1.4826 * median;
+  if (!(scale > 0)) scale = 1e-6; // guard s===0 (e.g. all residuals tiny/equal)
+
+  let maxWeightChange = 0;
+  for (let i = 0; i < priors.length; i++) {
+    const r = priors[i];
+    const raw = computeRawPriorResidual(params, r);
+    const u = raw / (CAUCHY_C * scale);
+    const w = 1 / (1 + u * u); // Cauchy weight: heavy down-weight, never zero
+    const prev = (r.robustWeight != null) ? r.robustWeight : 1;
+    maxWeightChange = Math.max(maxWeightChange, Math.abs(w - prev));
+    r.robustWeight = w;
+  }
+  return { scale: scale, maxWeightChange: maxWeightChange };
+}
+
+function optimize(players, matches, playerMap, initialValues, maxIterations, prebuiltResiduals) {
+  // Reuse caller-supplied residual descriptors so Cauchy IRLS weights persist
+  // across chunked steps and IRLS iterations; build fresh only if none given.
+  const residuals = prebuiltResiduals || buildResidualDescriptors(players, matches, playerMap);
   const numResiduals = residuals.length;
 
   const xData = Array.from({ length: numResiduals }, function(_, i) { return i; });
@@ -1026,37 +1074,84 @@ function runOptimization() {
   const CHUNK = 5;
   const MAX_ITERATIONS = 1000;
   const convergenceThreshold = players.length > 64 ? 2.0 : 0.5;
+
+  // Cauchy IRLS outer loop configuration. Prior residuals carry a robustWeight
+  // (default 1) that we reweight between solves; match residuals are never touched.
+  const IRLS_MAX = 6;
+  const IRLS_WEIGHT_TOL = 1e-3; // stop when no prior weight moves more than this
+
+  // Build residual descriptors ONCE so robustWeight persists across chunked
+  // steps and IRLS iterations. First IRLS pass uses all-1 weights (plain L2).
+  const residuals = buildResidualDescriptors(players, matches, playerMap);
+
   let currentValues = null;
   let totalIterations = 0;
+  let irlsIteration = 0;
+  let lastScale = 0;
+  let lastResult = null;
   const t0 = performance.now();
 
-  function step() {
+  // Inner solve: chunked LM stepping to convergence with the CURRENT weights.
+  function innerSolve(onConverged) {
+    function step() {
+      try {
+        const remaining = MAX_ITERATIONS - totalIterations;
+        if (remaining <= 0) { onConverged(lastResult); return; }
+        const prevValues = currentValues;
+        const result = optimize(players, matches, playerMap, currentValues, Math.min(CHUNK, remaining), residuals);
+        lastResult = result;
+        totalIterations += result.iterations;
+        currentValues = Array.from(result.parameterValues);
+
+        let converged = result.iterations < CHUNK;
+        if (!converged && prevValues) {
+          const maxChange = Math.max.apply(null, currentValues.map(function(v, i) { return Math.abs(v - prevValues[i]); }));
+          converged = maxChange < convergenceThreshold;
+        }
+
+        const optimizeEl = document.getElementById('progress-optimize');
+        if (optimizeEl && totalIterations < MAX_ITERATIONS) {
+          optimizeEl.innerHTML = SPINNER + ' IRLS pass ' + (irlsIteration + 1) + '/' + IRLS_MAX + ' \u00B7 ' + totalIterations + ' iterations\u2026';
+        }
+
+        if (converged || totalIterations >= MAX_ITERATIONS) {
+          onConverged(result);
+        } else {
+          requestAnimationFrame(function() { setTimeout(step, 0); });
+        }
+      } catch (e) {
+        setStatus('Optimization error: ' + e.message, 'error');
+        console.error(e);
+      }
+    }
+    requestAnimationFrame(function() { setTimeout(step, 0); });
+  }
+
+  // After each inner solve, recompute Cauchy weights on the PRIOR residuals and
+  // either re-solve or finish. Final solution is used for displayResults.
+  function afterSolve(result) {
     try {
-      const remaining = MAX_ITERATIONS - totalIterations;
-      if (remaining <= 0) return;
-      const prevValues = currentValues;
-      const result = optimize(players, matches, playerMap, currentValues, Math.min(CHUNK, remaining));
-      totalIterations += result.iterations;
-      currentValues = Array.from(result.parameterValues);
+      // Recompute Cauchy weights on the PRIOR residuals from the latest solution.
+      const reweight = updateCauchyWeights(currentValues, residuals);
+      lastScale = reweight.scale;
+      irlsIteration++;
 
-      let converged = result.iterations < CHUNK;
-      if (!converged && prevValues) {
-        const maxChange = Math.max.apply(null, currentValues.map(function(v, i) { return Math.abs(v - prevValues[i]); }));
-        converged = maxChange < convergenceThreshold;
-      }
+      // Stop when weights stabilize, we hit the IRLS cap, or the LM iteration cap.
+      const weightsStable = reweight.maxWeightChange < IRLS_WEIGHT_TOL;
+      const done = totalIterations >= MAX_ITERATIONS
+        || irlsIteration >= IRLS_MAX
+        || weightsStable;
 
-      // Update progress with iteration count
-      const optimizeEl = document.getElementById('progress-optimize');
-      if (optimizeEl && !converged && totalIterations < MAX_ITERATIONS) {
-        optimizeEl.innerHTML = SPINNER + ' ' + totalIterations + ' iterations\u2026';
-      }
-
-      if (converged || totalIterations >= MAX_ITERATIONS) {
-        const elapsed = Math.round(performance.now() - t0);
-        displayResults(players, result);
-        setProgressDone('progress-optimize', elapsed + ' ms \u00B7 ' + totalIterations + ' iterations');
+      if (done) {
+        // If weights just changed meaningfully and we still have budget, do one
+        // final re-solve so the reported solution reflects the final weights.
+        if (!weightsStable && irlsIteration < IRLS_MAX && totalIterations < MAX_ITERATIONS) {
+          innerSolve(finalize);
+          return;
+        }
+        finalize(result);
       } else {
-        requestAnimationFrame(function() { setTimeout(step, 0); });
+        innerSolve(afterSolve);
       }
     } catch (e) {
       setStatus('Optimization error: ' + e.message, 'error');
@@ -1064,14 +1159,22 @@ function runOptimization() {
     }
   }
 
-  requestAnimationFrame(function() { setTimeout(step, 0); });
+  function finalize(result) {
+    const elapsed = Math.round(performance.now() - t0);
+    const meta = { irlsIterations: irlsIteration, cauchyC: CAUCHY_C, scale: lastScale };
+    displayResults(players, result, meta);
+    setProgressDone('progress-optimize', elapsed + ' ms \u00B7 ' + totalIterations + ' iterations \u00B7 ' + irlsIteration + ' IRLS passes');
+  }
+
+  innerSolve(afterSolve);
 }
 
 // =====================================================
 // Results Display
 // =====================================================
-function displayResults(players, result) {
+function displayResults(players, result, meta) {
   const ratings = result.parameterValues;
+  meta = meta || {};
 
   for (const p of players) {
     const row = cachedRows.find(function(r) { return r.name === p.name; });
@@ -1105,8 +1208,19 @@ function displayResults(players, result) {
   }
 
   const priorResidual = result.residuals.find(function(r) { return r.type === 'prior'; });
+  // Map each player's index to its final Cauchy prior robustWeight (if anchored).
+  const priorWeightByIndex = new Map();
+  result.residuals.forEach(function(r) {
+    if (r.type === 'prior') {
+      priorWeightByIndex.set(r.playerIndex, (r.robustWeight != null) ? r.robustWeight : 1);
+    }
+  });
   const debugOutput = document.getElementById('debug-output');
   debugOutput.textContent = JSON.stringify({
+    technique: 'cauchy',
+    cauchyC: (meta.cauchyC != null) ? meta.cauchyC : CAUCHY_C,
+    finalScale: (meta.scale != null) ? Math.round(meta.scale * 10000) / 10000 : null,
+    irlsIterations: (meta.irlsIterations != null) ? meta.irlsIterations : null,
     iterations: result.iterations,
     totalError: result.parameterError,
     priorStickiness: priorResidual ? Math.round(priorResidual.stickiness * 100) / 100 : null,
@@ -1114,7 +1228,10 @@ function displayResults(players, result) {
     numResiduals: result.residuals.length,
     numMatchResiduals: result.residuals.filter(function(r) { return r.type === 'match'; }).length,
     numPriorResiduals: result.residuals.filter(function(r) { return r.type === 'prior'; }).length,
-    ratings: players.map(function(p) { return { name: p.name, fargoId: p.fargoId || null, prior: p.skillLevel, optimized: Math.round(ratings[p.index] * 100) / 100 }; }),
+    ratings: players.map(function(p) {
+      const rw = priorWeightByIndex.has(p.index) ? Math.round(priorWeightByIndex.get(p.index) * 10000) / 10000 : null;
+      return { name: p.name, fargoId: p.fargoId || null, prior: p.skillLevel, optimized: Math.round(ratings[p.index] * 100) / 100, priorRobustWeight: rw };
+    }),
   }, null, 2);
   document.getElementById('debug').classList.remove('hidden');
 }
