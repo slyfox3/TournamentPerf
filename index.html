@@ -1303,6 +1303,12 @@ function compareRows(a, b, key, dir) {
   if (key === 'name') {
     return dir * (va || '').localeCompare(vb || '');
   }
+  // A missing delta (no official rating) can't be computed — sort it as if it were 0.
+  if (key === 'delta') {
+    if (va == null) va = 0;
+    if (vb == null) vb = 0;
+    return dir * (va - vb);
+  }
   if (va == null && vb == null) return 0;
   if (va == null) return 1;
   if (vb == null) return -1;
