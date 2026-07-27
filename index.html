@@ -1297,8 +1297,12 @@ function compareRows(a, b, key, dir) {
   let va = a[key];
   let vb = b[key];
   if (key === 'place') {
-    va = parsePlaceValue(va);
-    vb = parsePlaceValue(vb);
+    // A player with no place yet is still competing (not eliminated), so they're
+    // out-placing everyone already knocked out — treat them as 0th place so they
+    // sort to the top, not the bottom.
+    va = va ? parsePlaceValue(va) : 0;
+    vb = vb ? parsePlaceValue(vb) : 0;
+    return dir * (va - vb);
   }
   if (key === 'name') {
     return dir * (va || '').localeCompare(vb || '');
