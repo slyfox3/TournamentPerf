@@ -104,11 +104,32 @@
   @keyframes row-highlight { 0%, 10%, 20%, 30% { background: #3b82f6aa; } 5%, 15%, 25% { background: transparent; } 35% { background: #3b82f6aa; } 100% { background: transparent; } }
   tr.player-row.highlight td { animation: row-highlight 6s ease-out; }
   td.name-cell { cursor: pointer; }
-  .nav-back-pill { position: fixed; bottom: 24px; right: 24px; background: #1e293b; border: 1px solid #334155; border-radius: 20px; padding: 8px 16px; color: #60a5fa; font-size: 13px; cursor: pointer; display: none; align-items: center; gap: 6px; z-index: 999; box-shadow: 0 4px 12px rgba(0,0,0,0.4); transition: opacity 0.2s; min-height: 44px; }
+  .nav-back-pill { position: fixed; bottom: calc(88px + env(safe-area-inset-bottom)); right: 24px; background: #1e293b; border: 1px solid #334155; border-radius: 20px; padding: 8px 16px; color: #60a5fa; font-size: 13px; cursor: pointer; display: none; align-items: center; gap: 6px; z-index: 999; box-shadow: 0 4px 12px rgba(0,0,0,0.4); transition: opacity 0.2s; min-height: 44px; }
   .nav-back-pill:hover { background: #334155; }
   .nav-back-pill svg { width: 14px; height: 14px; flex-shrink: 0; }
   .nav-back-dismiss { background: none; border: none; color: #64748b; font-size: 16px; cursor: pointer; padding: 0 0 0 4px; line-height: 1; }
   .nav-back-dismiss:hover { color: #e2e8f0; }
+
+  /* Floating player search */
+  .player-search-fab { position: fixed; bottom: calc(24px + env(safe-area-inset-bottom)); right: 24px; width: 52px; height: 52px; border-radius: 50%; background: #2563eb; border: none; color: #fff; display: none; align-items: center; justify-content: center; cursor: pointer; z-index: 998; box-shadow: 0 4px 14px rgba(0,0,0,0.5); -webkit-tap-highlight-color: transparent; }
+  .player-search-fab.visible { display: flex; }
+  .player-search-fab:hover { background: #3b82f6; }
+  .player-search-fab svg { width: 22px; height: 22px; }
+  .player-search-overlay { position: fixed; inset: 0; background: rgba(2,6,23,0.94); z-index: 1001; display: none; padding: max(12px, env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom)); }
+  .player-search-overlay.open { display: block; }
+  .player-search-box { max-width: 520px; height: 100%; margin: 0 auto; display: flex; flex-direction: column; }
+  .player-search-bar { display: flex; align-items: center; gap: 8px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 6px 10px; flex-shrink: 0; }
+  .player-search-bar .pse-icon { width: 16px; height: 16px; color: #64748b; flex-shrink: 0; }
+  /* 16px keeps iOS Safari from zooming on focus */
+  #player-search-input { flex: 1; min-width: 0; background: none; border: none; outline: none; color: #e2e8f0; font-size: 16px; padding: 8px 0; }
+  .player-search-close { background: none; border: none; color: #94a3b8; font-size: 26px; line-height: 1; cursor: pointer; padding: 0 4px; min-width: 32px; }
+  .player-search-close:hover { color: #e2e8f0; }
+  .player-search-results { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; margin-top: 6px; }
+  .pse-item { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 12px; border-radius: 8px; cursor: pointer; color: #e2e8f0; font-size: 15px; }
+  .pse-item.active, .pse-item:hover { background: #1e293b; }
+  .pse-name mark { background: none; color: #60a5fa; font-weight: 700; }
+  .pse-meta { margin-left: auto; padding-left: 8px; color: #64748b; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .pse-empty { padding: 18px 12px; text-align: center; color: #64748b; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -146,6 +167,8 @@
       <dd>The difference between the performance rating and the official rating. Green positive values mean the player performed above their official rating; red negative values mean below.</dd>
       <dt>Match details</dt>
       <dd>Click a player's name to expand their row and see individual match results. When multiple tournaments are loaded, matches are grouped by tournament.</dd>
+      <dt>Player search</dt>
+      <dd>Click the magnifier button in the bottom-right corner (or press <b>/</b>) to search loaded players by name. Arrow keys move through the results, Enter jumps to the player's row, Escape closes.</dd>
     </dl>
   </div>
 </div>
@@ -306,6 +329,21 @@
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
   <span id="nav-back-name"></span>
   <button class="nav-back-dismiss" id="nav-back-dismiss" aria-label="Dismiss">&times;</button>
+</div>
+
+<button class="player-search-fab" id="player-search-fab" aria-label="Search players" title="Search players (/)">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4.7-4.7"/></svg>
+</button>
+
+<div class="player-search-overlay" id="player-search-overlay" role="dialog" aria-modal="true" aria-label="Search players">
+  <div class="player-search-box">
+    <div class="player-search-bar">
+      <svg class="pse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4.7-4.7"/></svg>
+      <input type="text" id="player-search-input" placeholder="Search players&hellip;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" aria-label="Player name" aria-autocomplete="list" aria-controls="player-search-results">
+      <button class="player-search-close" id="player-search-close" aria-label="Close search">&times;</button>
+    </div>
+    <div class="player-search-results" id="player-search-results" role="listbox"></div>
+  </div>
 </div>
 
 <script src="fargorate.js"></script>
@@ -765,8 +803,10 @@ function tryAggregate() {
     document.getElementById('results').classList.add('hidden');
     document.getElementById('debug').classList.add('hidden');
     cachedParsedData = null;
+    cachedRows = [];
     navHistory = [];
     updateNavPill();
+    updateSearchFab();
     return;
   }
 
@@ -1450,6 +1490,8 @@ function renderTable() {
     });
     input.addEventListener('click', function(e) { e.stopPropagation(); });
   });
+
+  updateSearchFab();
 }
 
 // =====================================================
@@ -1517,6 +1559,171 @@ function navBack() {
   updateNavPill();
 }
 
+// =====================================================
+// Floating player search
+// =====================================================
+var searchFabEl = document.getElementById('player-search-fab');
+var searchOverlayEl = document.getElementById('player-search-overlay');
+var searchInputEl = document.getElementById('player-search-input');
+var searchResultsEl = document.getElementById('player-search-results');
+var searchHits = [];
+var searchCursor = -1;
+var SEARCH_RESULT_CAP = 200;
+
+// Every player in the results table is a jump target. Rows can repeat a name
+// when duplicate Fargo IDs split a player, so collapse on the lowercased name.
+function collectSearchablePlayers() {
+  var byName = Object.create(null), out = [];
+  for (var i = 0; i < cachedRows.length; i++) {
+    var r = cachedRows[i];
+    if (!r.name) continue;
+    var key = r.name.toLowerCase();
+    if (byName[key]) {
+      if (byName[key].prior == null) byName[key].prior = r.prior;
+      if (byName[key].optimized == null) byName[key].optimized = r.optimized;
+      if (!byName[key].place) byName[key].place = r.place;
+      continue;
+    }
+    byName[key] = { name: r.name, prior: r.prior, optimized: r.optimized, place: r.place };
+    out.push(byName[key]);
+  }
+  return out;
+}
+
+function updateSearchFab() {
+  var hasPlayers = cachedRows.length > 0;
+  searchFabEl.classList.toggle('visible', hasPlayers);
+  if (!hasPlayers) closeSearch();
+}
+
+function reEsc(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Prefix matches rank above mid-word ones; every token must match somewhere
+function rankPlayers(query) {
+  var players = collectSearchablePlayers();
+  var toks = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (!toks.length) {
+    return players.slice().sort(function(a, b) { return a.name.localeCompare(b.name); });
+  }
+  var scored = [];
+  for (var i = 0; i < players.length; i++) {
+    var lname = players[i].name.toLowerCase();
+    var words = lname.split(/\s+/);
+    var score = 0, ok = true;
+    for (var t = 0; t < toks.length; t++) {
+      var tk = toks[t];
+      if (lname.indexOf(tk) === 0) continue;
+      var wordHit = false;
+      for (var w = 0; w < words.length; w++) {
+        if (words[w].indexOf(tk) === 0) { wordHit = true; break; }
+      }
+      if (wordHit) { score += 1; continue; }
+      if (lname.indexOf(tk) !== -1) { score += 3; continue; }
+      ok = false;
+      break;
+    }
+    if (ok) scored.push({ p: players[i], score: score });
+  }
+  scored.sort(function(a, b) { return a.score - b.score || a.p.name.localeCompare(b.p.name); });
+  return scored.map(function(s) { return s.p; });
+}
+
+function highlightName(name, toks) {
+  if (!toks.length) return escapeHtml(name);
+  var parts = name.split(new RegExp('(' + toks.map(reEsc).join('|') + ')', 'ig'));
+  var out = '';
+  for (var i = 0; i < parts.length; i++) {
+    out += (i % 2 === 1) ? '<mark>' + escapeHtml(parts[i]) + '</mark>' : escapeHtml(parts[i]);
+  }
+  return out;
+}
+
+function renderSearchResults() {
+  var query = searchInputEl.value;
+  var toks = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  var all = rankPlayers(query);
+  searchHits = all.slice(0, SEARCH_RESULT_CAP);
+  searchCursor = searchHits.length ? 0 : -1;
+  if (!searchHits.length) {
+    searchResultsEl.innerHTML = '<div class="pse-empty">No player matches &ldquo;' + escapeHtml(query) + '&rdquo;</div>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < searchHits.length; i++) {
+    var p = searchHits[i];
+    var meta = [];
+    if (p.optimized != null) meta.push('Perf ' + p.optimized);
+    if (p.prior != null && p.prior >= 0) meta.push('Off ' + p.prior);
+    if (p.place) meta.push(formatPlace(p.place));
+    html += '<div class="pse-item' + (i === 0 ? ' active' : '') + '" role="option" data-name="' + escapeHtml(p.name) + '">';
+    html += '<span class="pse-name">' + highlightName(p.name, toks) + '</span>';
+    if (meta.length) html += '<span class="pse-meta">' + escapeHtml(meta.join(' · ')) + '</span>';
+    html += '</div>';
+  }
+  if (all.length > searchHits.length) {
+    html += '<div class="pse-empty">Showing ' + searchHits.length + ' of ' + all.length + ' &mdash; keep typing to narrow</div>';
+  }
+  searchResultsEl.innerHTML = html;
+  searchResultsEl.scrollTop = 0;
+}
+
+function moveSearchCursor(delta) {
+  if (!searchHits.length) return;
+  var items = searchResultsEl.querySelectorAll('.pse-item');
+  if (searchCursor >= 0 && items[searchCursor]) items[searchCursor].classList.remove('active');
+  searchCursor = (searchCursor + delta + searchHits.length) % searchHits.length;
+  var el = items[searchCursor];
+  if (el) {
+    el.classList.add('active');
+    el.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function openSearch() {
+  searchOverlayEl.classList.add('open');
+  searchInputEl.value = '';
+  renderSearchResults();
+  searchInputEl.focus();
+}
+
+function closeSearch() {
+  searchOverlayEl.classList.remove('open');
+  searchInputEl.blur();
+}
+
+function jumpToPlayer(name) {
+  closeSearch();
+  scrollToPlayer(name);
+}
+
+searchFabEl.addEventListener('click', openSearch);
+document.getElementById('player-search-close').addEventListener('click', closeSearch);
+searchInputEl.addEventListener('input', renderSearchResults);
+
+searchOverlayEl.addEventListener('click', function(e) {
+  // Tapping the dimmed backdrop closes
+  if (e.target === searchOverlayEl) closeSearch();
+});
+
+searchResultsEl.addEventListener('click', function(e) {
+  var item = e.target.closest('.pse-item');
+  if (item) jumpToPlayer(item.dataset.name);
+});
+
+searchInputEl.addEventListener('keydown', function(e) {
+  if (e.key === 'ArrowDown') { e.preventDefault(); moveSearchCursor(1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); moveSearchCursor(-1); }
+  else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (searchCursor >= 0 && searchHits[searchCursor]) jumpToPlayer(searchHits[searchCursor].name);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    closeSearch();
+  }
+});
+
 document.getElementById('nav-back-pill').addEventListener('click', function(e) {
   if (e.target.closest('.nav-back-dismiss')) return;
   navBack();
@@ -1553,8 +1760,12 @@ document.getElementById('results').addEventListener('click', function(e) {
 });
 
 document.addEventListener('keydown', function(e) {
-  if (e.key === ',' && !e.target.closest('input, textarea, [contenteditable]')) {
+  if (e.target.closest('input, textarea, [contenteditable]')) return;
+  if (e.key === ',') {
     if (navHistory.length > 0) { e.preventDefault(); navBack(); }
+  } else if (e.key === '/' && searchFabEl.classList.contains('visible')) {
+    e.preventDefault();
+    openSearch();
   }
 });
 
