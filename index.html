@@ -648,6 +648,83 @@ function applyFargoResults(slot, fargoResults) {
   tryAggregate();
 }
 
+// =====================================================
+// Manual official-rating overrides
+// =====================================================
+// A correction the user types into the official-rating column is worth more
+// than what the lookup returned — it is usually a fix for a bad name match or
+// a stale rating — so it outlives the page. Kept apart from the FargoRate
+// cache in fargorate.js on purpose: that one caches raw *candidate lists* per
+// name and expires them (HIT_TTL), because its disambiguation is specific to
+// the field being loaded. A user correction is a resolved rating, applies to
+// every tournament, and must not silently expire.
+const RATING_OVERRIDE_KEY = 'tp_rating_override_v1';
+const RATING_OVERRIDE_MAX = 2000;
+
+let ratingOverrideCache = null;
+
+function loadRatingOverrides() {
+  if (ratingOverrideCache) return ratingOverrideCache;
+  try {
+    ratingOverrideCache = JSON.parse(localStorage.getItem(RATING_OVERRIDE_KEY)) || {};
+  } catch (e) {
+    ratingOverrideCache = {};
+  }
+  return ratingOverrideCache;
+}
+
+// Collapses internal whitespace as well as trimming, unlike cacheKeyFor() in
+// fargorate.js. That one is keyed by the name as a single source spelled it;
+// an override has to survive "Shane Van Boening" appearing with a stray double
+// space in a different bracket.
+function overrideKeyFor(name) { return String(name).trim().toLowerCase().replace(/\s+/g, ' '); }
+
+let ratingOverrideSaveTimer = null;
+function scheduleRatingOverrideSave() {
+  // The input handler fires per keystroke; serialising the store each time is
+  // wasted work. Mirrors scheduleSave() in fargorate.js.
+  if (ratingOverrideSaveTimer) return;
+  ratingOverrideSaveTimer = setTimeout(function() {
+    ratingOverrideSaveTimer = null;
+    const store = loadRatingOverrides();
+    const keys = Object.keys(store);
+    if (keys.length > RATING_OVERRIDE_MAX) {
+      keys.sort(function(a, b) { return store[a].t - store[b].t; });
+      for (let i = 0; i < keys.length - RATING_OVERRIDE_MAX; i++) delete store[keys[i]];
+    }
+    try {
+      localStorage.setItem(RATING_OVERRIDE_KEY, JSON.stringify(store));
+    } catch (e) { /* quota exceeded — overrides are a convenience, not state */ }
+  }, 250);
+}
+
+// value: a number to pin, null to record "this player has no official rating",
+// or undefined to forget the override entirely.
+function setRatingOverride(name, value) {
+  const store = loadRatingOverrides();
+  const key = overrideKeyFor(name);
+  if (value === undefined) {
+    if (!(key in store)) return;
+    delete store[key];
+  } else {
+    store[key] = { r: value, t: Date.now() };
+  }
+  scheduleRatingOverrideSave();
+}
+
+function getRatingOverride(name) {
+  const e = loadRatingOverrides()[overrideKeyFor(name)];
+  return e ? e.r : undefined;
+}
+
+// Escape hatch — there is no UI for dropping a correction once it is stored,
+// and a wrong one would otherwise follow the user across every tournament.
+window.clearRatingOverrides = function() {
+  ratingOverrideCache = {};
+  try { localStorage.removeItem(RATING_OVERRIDE_KEY); } catch (e) { /* nothing to undo */ }
+  return 'Cleared. Reload to re-apply looked-up ratings.';
+};
+
 function aggregateSlots() {
   const loaded = slots.filter(function(s) { return s.parsed && s.parsed.players.length > 0; });
   if (loaded.length === 0) return null;
@@ -688,6 +765,14 @@ function aggregateSlots() {
         }
       }
     }
+  }
+
+  // Applied here rather than in applyFargoResults() because this is the one
+  // point every source funnels through — DigitalPool ships ratings inline and
+  // never runs a lookup at all, and a correction should stick there too.
+  for (const [, gp] of globalPlayers) {
+    const override = getRatingOverride(gp.name);
+    if (override !== undefined) gp.skillLevel = override;
   }
 
   // Assign indices
@@ -1489,8 +1574,10 @@ function renderTable() {
         // so the optimization runs as if the player has no official rating.
         if (originalMissing) {
           manualRatings.delete(name);
+          setRatingOverride(name, undefined);
         } else {
           manualRatings.set(name, null);
+          setRatingOverride(name, null);
         }
         return; // re-optimize on blur to avoid thrashing mid-edit
       }
@@ -1501,6 +1588,14 @@ function renderTable() {
         manualRatings.delete(name);
       }
       if (manualRatings.size > 0 && numVal >= 300 && numVal <= 900) {
+        // Gated on the same range as the re-optimize below: the input event
+        // fires per keystroke, so typing "550" passes through 5 and 55, and
+        // persisting those would leave a garbage rating behind if the user
+        // navigated away mid-edit. Equal-to-original deliberately does not
+        // clear a stored override — on a later load `original` IS the stored
+        // override, so treating that as "delete" would silently revert the
+        // correction the moment the user re-typed the value they already see.
+        setRatingOverride(name, numVal);
         window.handleReoptimize();
       }
     });
