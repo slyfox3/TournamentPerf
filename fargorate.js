@@ -113,16 +113,24 @@
    *
    * Options:
    *   onProgress(done, total, results) — called after each player
-   *   concurrency — max parallel requests (default 24)
+   *   concurrency — max outstanding requests (default 72)
    *
    * Returns a Map of name → { rating, fargoId, location } or null.
    */
   async function resolveAll(names, options) {
     options = options || {};
     var onProgress = options.onProgress || null;
-    // Measured against the live API: 6 took ~98s for 256 names, 24 took ~23s
-    // with no throttling or errors.
-    var concurrency = options.concurrency || 24;
+    // How many fetches we leave outstanding, which is not how many actually
+    // fly: dashboard.fargorate.com is HTTP/1.1 only (no ALPN h2), so the
+    // browser holds it to 6 sockets per host no matter what this says. Past
+    // that point the number only keeps the socket pool from going idle between
+    // a response landing and the next request being queued.
+    //
+    // Measured against the live API with 80 disjoint names per run, outside
+    // the browser so the socket cap does not apply: 6 -> 10.4s, 24 -> 8.2s,
+    // 72 -> 3.1s, every request 200, no throttling. Inside the browser expect
+    // the 6-socket figure. The localStorage cache above is the real win.
+    var concurrency = options.concurrency || 72;
 
     var results = new Map();
     if (!names || names.length === 0) return results;
