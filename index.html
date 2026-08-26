@@ -43,6 +43,9 @@
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   .progress-pulse { color: #60a5fa; animation: pulse 1.5s ease-in-out infinite; }
   .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #334155; border-top-color: #60a5fa; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; }
+  .fargo-bar { display: inline-block; width: 110px; height: 6px; background: #334155; border-radius: 3px; overflow: hidden; vertical-align: middle; margin-right: 8px; }
+  .fargo-bar-fill { display: block; height: 100%; background: #60a5fa; border-radius: 3px; transition: width 0.25s linear; }
+  .fargo-bar-text { color: #94a3b8; font-variant-numeric: tabular-nums; }
   .url-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
   .url-row input { flex: 1; }
   .add-url-btn { width: 20px; height: 20px; padding: 0; font-size: 14px; line-height: 1; border-radius: 3px; margin-top: 4px; background: #1e293b; color: #64748b; border: 1px solid #475569; position: relative; }
@@ -669,17 +672,25 @@ async function startFargoLookups(slot) {
   if (!slot.parsed || !window.FargoRateLookup) return;
 
   const names = slot.parsed.players.map(function(p) { return p.name; });
-  fargoProgress = { done: 0, total: names.length, resolved: 0 };
+  fargoProgress = { done: 0, total: names.length, resolved: 0, cached: 0, networkStartedAt: performance.now() };
   renderProgress();
+  startFargoTicker();
 
   const fargoResults = await window.FargoRateLookup.resolveAll(names, {
+    // The rate clock starts after the cache burst, not before it.
+    onCached: function(n) {
+      fargoProgress.cached = n;
+      fargoProgress.networkStartedAt = performance.now();
+      updateFargoRow();
+    },
     onProgress: function(done, total, results) {
       fargoProgress.done = done;
       fargoProgress.resolved = 0;
       results.forEach(function(v) { if (v) fargoProgress.resolved++; });
-      renderProgress();
+      updateFargoRow();
     },
   });
+  stopFargoTicker();
 
   // Final application with disambiguation applied
   fargoProgress.resolved = 0;
@@ -910,15 +921,8 @@ function renderProgress() {
   // Fargo lookup row — show when any slot needs Fargo lookups (e.g. BracketBeast)
   const needsFargo = activeSlots.some(function(s) { return s.source && s.source.needsRatingLookup; });
   if (needsFargo) {
-    let fargoValue;
-    if (fargoProgress && fargoProgress.done >= fargoProgress.total) {
-      fargoValue = '<span class="progress-done">\u2713 ' + fargoProgress.resolved + ' / ' + fargoProgress.total + ' players matched</span>';
-    } else if (fargoProgress) {
-      fargoValue = SPINNER + ' ' + fargoProgress.done + ' / ' + fargoProgress.total + ' players';
-    } else {
-      fargoValue = '<span class="progress-blocked">\u23F8 waiting for tournament data</span>';
-    }
-    html += '<tr><td class="progress-label">Looking up official ratings</td><td class="progress-value">' + fargoValue + '</td></tr>';
+    html += '<tr><td class="progress-label">Looking up official ratings</td><td class="progress-value" id="progress-fargo">'
+      + fargoBarHtml(fargoProgress, performance.now()) + '</td></tr>';
   }
 
   // Module row
@@ -950,6 +954,67 @@ function renderProgress() {
   html += '<tr><td class="progress-label">Joint-estimate player performances</td><td class="progress-value" id="progress-optimize">' + optimizeValue + '</td></tr>';
 
   body.innerHTML = html;
+}
+
+// =====================================================
+// Official-ratings progress bar
+// =====================================================
+// Cache hits resolve instantly at t=0. Counting them would report a rate like
+// 400/s and an ETA of zero, then stall, so rate and ETA cover only the players
+// that actually needed a request.
+function fargoRate(p, nowMs) {
+  var networkTotal = p.total - p.cached;
+  var networkDone = p.done - p.cached;
+  if (networkTotal <= 0) return { rate: null, etaSec: 0 };
+  if (networkDone <= 0) return { rate: null, etaSec: null };
+  var elapsedSec = (nowMs - p.networkStartedAt) / 1000;
+  if (elapsedSec <= 0) return { rate: null, etaSec: null };
+  var rate = networkDone / elapsedSec;
+  return { rate: rate, etaSec: rate > 0 ? (networkTotal - networkDone) / rate : null };
+}
+
+function formatEta(sec) {
+  if (sec == null) return '\u2026';
+  sec = Math.max(0, Math.round(sec));
+  if (sec < 60) return sec + 's';
+  return Math.floor(sec / 60) + 'm ' + String(sec % 60).padStart(2, '0') + 's';
+}
+
+function fargoBarHtml(p, nowMs) {
+  if (!p) return '<span class="progress-blocked">\u23F8 waiting for tournament data</span>';
+  if (p.done >= p.total) {
+    return '<span class="progress-done">\u2713 ' + p.resolved + ' / ' + p.total + ' players matched'
+      + (p.cached > 0 ? ' \u00B7 ' + p.cached + ' cached' : '') + '</span>';
+  }
+  var pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
+  var r = fargoRate(p, nowMs);
+  var bits = [p.done + ' / ' + p.total];
+  if (r.rate != null) bits.push(r.rate.toFixed(1) + '/s');
+  bits.push('ETA ' + formatEta(r.etaSec));
+  if (p.cached > 0) bits.push(p.cached + ' cached');
+  return '<span class="fargo-bar"><span class="fargo-bar-fill" style="width:' + pct + '%"></span></span>'
+    + '<span class="fargo-bar-text">' + bits.join(' \u00B7 ') + '</span>';
+}
+
+// Updates only this cell. renderProgress() rebuilds the entire table, and
+// calling it once per resolved player meant 256 rebuilds per load.
+function updateFargoRow() {
+  var el = document.getElementById('progress-fargo');
+  if (el && fargoProgress) el.innerHTML = fargoBarHtml(fargoProgress, performance.now());
+}
+
+// onProgress only fires when a player resolves, so on its own the ETA would
+// freeze whenever a request is slow. This keeps the countdown moving.
+let fargoTicker = null;
+function startFargoTicker() {
+  if (fargoTicker) return;
+  fargoTicker = setInterval(function() {
+    updateFargoRow();
+    if (!fargoProgress || fargoProgress.done >= fargoProgress.total) stopFargoTicker();
+  }, 250);
+}
+function stopFargoTicker() {
+  if (fargoTicker) { clearInterval(fargoTicker); fargoTicker = null; }
 }
 
 function setProgressDone(id, text) {
