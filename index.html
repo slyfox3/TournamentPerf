@@ -1120,8 +1120,22 @@ function optimize(players, matches, playerMap, initialValues, maxIterations, pre
   };
 }
 
+// Bumped by every runOptimization() call so older, still-scheduled runs can
+// tell they have been superseded.
+let optimizationRunId = 0;
+
 function runOptimization() {
   if (!cachedParsedData) return;
+
+  // This call supersedes anything still in flight. Editing an official rating
+  // fires handleReoptimize() more than once (per keystroke that yields a valid
+  // rating, and again on blur), and the loop below drives itself through
+  // requestAnimationFrame — so without a generation check the old
+  // continuations keep going. They interleave progress writes with the new
+  // run's, and each calls displayResults() at the end, which lets a solve
+  // built from now-stale priors land last.
+  const runId = ++optimizationRunId;
+  const isStale = function() { return runId !== optimizationRunId; };
   const { players, matches, playerMap } = cachedParsedData;
   const CHUNK = 5;
   const MAX_ITERATIONS = 1000;
@@ -1146,6 +1160,7 @@ function runOptimization() {
   // Inner solve: chunked LM stepping to convergence with the CURRENT weights.
   function innerSolve(onConverged) {
     function step() {
+      if (isStale()) return;
       try {
         const remaining = MAX_ITERATIONS - totalIterations;
         if (remaining <= 0) { onConverged(lastResult); return; }
@@ -1220,6 +1235,7 @@ function runOptimization() {
   }
 
   function finalize(result) {
+    if (isStale()) return;
     const elapsed = Math.round(performance.now() - t0);
     const meta = { irlsIterations: irlsIteration, cauchyC: CAUCHY_C, scale: lastScale };
     displayResults(players, result, meta);
