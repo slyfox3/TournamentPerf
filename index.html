@@ -1195,9 +1195,17 @@ function runOptimization() {
         || weightsStable;
 
       if (done) {
-        // If weights just changed meaningfully and we still have budget, do one
-        // final re-solve so the reported solution reflects the final weights.
-        if (!weightsStable && irlsIteration < IRLS_MAX && totalIterations < MAX_ITERATIONS) {
+        // The weights were just recomputed but not yet solved with, so `result`
+        // still reflects the previous ones. When they moved meaningfully and
+        // there is LM budget left, spend one more solve so the reported
+        // solution matches the reported weights.
+        //
+        // Reaching here with !weightsStable means we stopped on a cap, so this
+        // must NOT also require irlsIteration < IRLS_MAX — that was the whole
+        // contradiction that made this branch unreachable. innerSolve() clamps
+        // itself to MAX_ITERATIONS - totalIterations, and finalize() does not
+        // loop, so this adds at most one bounded solve.
+        if (!weightsStable && totalIterations < MAX_ITERATIONS) {
           innerSolve(finalize);
           return;
         }
