@@ -211,89 +211,21 @@
       body.innerHTML = html;
       progressEl.classList.remove('hidden');
 
-      // Show WNT cookie modal immediately — don't wait for external scripts
-      if (wntSlugs.length > 0 && !window._wntCookieReady) {
-        window._wntCookieReady = new Promise(function(resolve) {
-          var slug = wntSlugs[0];
-          var eventUrl = 'https://www.wntlivescores.com/events/' + slug + '/matches-list/1';
-          var overlay = document.createElement('div');
-          overlay.className = 'modal-overlay';
-          overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000;';
-          var modal = document.createElement('div');
-          modal.style.cssText = 'background:#1e293b;border-radius:10px;padding:28px 32px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 8px 30px rgba(0,0,0,0.4);position:relative;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
-
-          // Build modal content using DOM APIs to avoid XSS from URL params
-          var h2 = document.createElement('h2');
-          h2.style.cssText = 'margin:0 0 8px 0;font-size:18px;color:#f1f5f9;';
-          h2.textContent = 'WNT Live Scores Authentication';
-          modal.appendChild(h2);
-
-          var p = document.createElement('p');
-          p.style.cssText = 'font-size:13px;color:#94a3b8;margin:0 0 16px 0;line-height:1.6;';
-          p.textContent = 'WNT requires a free account. Log in and then:';
-          modal.appendChild(p);
-
-          var ol = document.createElement('ol');
-          ol.style.cssText = 'font-size:13px;color:#94a3b8;margin:0 0 16px 0;line-height:2;padding-left:20px;';
-
-          var li1 = document.createElement('li');
-          li1.appendChild(document.createTextNode('Open '));
-          var link = document.createElement('a');
-          link.href = eventUrl;
-          link.target = '_blank';
-          link.style.color = '#60a5fa';
-          link.textContent = eventUrl;
-          li1.appendChild(link);
-          li1.appendChild(document.createTextNode(' in Chrome'));
-          ol.appendChild(li1);
-
-          var steps = [
-            'Open DevTools (F12 or Cmd+Option+I)',
-            'Go to the Network tab',
-            'Refresh the page (Cmd+R)',
-            'Right-click the first request (named "1") → Copy → Copy as cURL',
-            'Paste below'
-          ];
-          for (var si = 0; si < steps.length; si++) {
-            var li = document.createElement('li');
-            li.textContent = steps[si];
-            ol.appendChild(li);
-          }
-          modal.appendChild(ol);
-
-          // The rest of the modal uses static content (no user input), safe to use innerHTML
-          var formHtml = '<textarea id="wnt-curl-input" style="width:100%;height:120px;background:#0f172a;color:#e2e8f0;border:1px solid #475569;border-radius:4px;padding:8px;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;" placeholder="curl \'https://www.wntlivescores.com/events/...\'  -H \'...\' -b \'wnt.live.sid=...\' ..."></textarea>'
-            + '<div id="wnt-curl-error" style="color:#fca5a5;font-size:12px;margin-top:6px;display:none;"></div>'
-            + '<div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">'
-            + '<button id="wnt-curl-cancel" style="padding:8px 16px;border-radius:4px;background:#334155;color:#e2e8f0;border:none;cursor:pointer;font-size:13px;">Cancel</button>'
-            + '<button id="wnt-curl-submit" style="padding:8px 16px;border-radius:4px;background:#2563eb;color:white;border:none;cursor:pointer;font-size:13px;font-weight:600;">Connect</button>'
-            + '</div>';
-          var formContainer = document.createElement('div');
-          formContainer.innerHTML = formHtml;
-          modal.appendChild(formContainer);
-
-          overlay.appendChild(modal);
-          document.body.appendChild(overlay);
-          document.getElementById('wnt-curl-cancel').onclick = function() {
-            document.body.removeChild(overlay);
-            resolve(null);
-          };
-          overlay.onclick = function(e) {
-            if (e.target === overlay) { document.body.removeChild(overlay); resolve(null); }
-          };
-          document.getElementById('wnt-curl-submit').onclick = function() {
-            var curlText = document.getElementById('wnt-curl-input').value.trim();
-            var match = curlText.match(/wnt\.live\.sid=([^\s;'"]+)/);
-            if (!match) {
-              var errEl = document.getElementById('wnt-curl-error');
-              errEl.textContent = 'Could not find wnt.live.sid cookie. Make sure you copied the full curl command.';
-              errEl.style.display = 'block';
-              return;
-            }
-            document.body.removeChild(overlay);
-            resolve('wnt.live.sid=' + match[1]);
-          };
-          setTimeout(function() { document.getElementById('wnt-curl-input').focus(); }, 50);
+      // Prefetch WNT data immediately — the proxy holds the session, so unlike
+      // the old flow this needs no interaction.
+      if (wntSlugs.length > 0) {
+        window._prefetchedData = window._prefetchedData || {};
+        wntSlugs.forEach(function(slug) {
+          var wntT0 = performance.now();
+          window._prefetchedData[slug] = fetch('https://wnt-proxy.slyfox3.workers.dev/wnt/event/' + encodeURIComponent(slug))
+            .then(function(r) {
+              return r.json().then(function(json) {
+                if (!r.ok) throw new Error(json.message || json.error || ('HTTP ' + r.status));
+                return json;
+              });
+            }).then(function(json) {
+              return { json: json, fetchMs: Math.round(performance.now() - wntT0), payloadSize: JSON.stringify(json).length };
+            });
         });
       }
 
