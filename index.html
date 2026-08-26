@@ -43,9 +43,9 @@
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   .progress-pulse { color: #60a5fa; animation: pulse 1.5s ease-in-out infinite; }
   .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #334155; border-top-color: #60a5fa; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; }
-  .fargo-bar { display: inline-block; width: 110px; height: 6px; background: #334155; border-radius: 3px; overflow: hidden; vertical-align: middle; margin-right: 8px; }
-  .fargo-bar-fill { display: block; height: 100%; background: #60a5fa; border-radius: 3px; transition: width 0.25s linear; }
-  .fargo-bar-text { color: #94a3b8; font-variant-numeric: tabular-nums; }
+  .progress-bar { display: inline-block; width: 150px; height: 6px; background: #334155; border-radius: 3px; overflow: hidden; vertical-align: middle; margin-right: 8px; }
+  .progress-bar-fill { display: block; height: 100%; background: #60a5fa; border-radius: 3px; transition: width 0.25s linear; }
+  .progress-bar-text { color: #94a3b8; font-variant-numeric: tabular-nums; }
   .url-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
   .url-row input { flex: 1; }
   .add-url-btn { width: 20px; height: 20px; padding: 0; font-size: 14px; line-height: 1; border-radius: 3px; margin-top: 4px; background: #1e293b; color: #64748b; border: 1px solid #475569; position: relative; }
@@ -82,6 +82,8 @@
   .debug-section { margin-top: 20px; background: #1e293b; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
   .debug-section span { color: #60a5fa; }
   .debug-section pre { font-size: 12px; overflow-x: auto; max-height: 300px; overflow-y: auto; background: #0f172a; color: #cbd5e1; padding: 10px; border-radius: 4px; }
+  /* One click selects the whole trace — it exists to be pasted elsewhere. */
+  #trace-output { user-select: all; -webkit-user-select: all; }
   .rating-input { width: 50px; padding: 2px 4px; border: 1px solid #475569; border-radius: 3px; font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; -moz-appearance: textfield; background: #0f172a; color: #e2e8f0; }
   .rating-input:focus { outline: 2px solid #60a5fa; border-color: #60a5fa; }
   .rating-input::placeholder { color: #64748b; font-style: italic; }
@@ -258,6 +260,8 @@
 <div id="debug" class="hidden debug-section">
   <span style="color: #2563eb; cursor: pointer; font-size: 13px;" onclick="toggleDebug()">Show/hide optimization details</span>
   <pre id="debug-output" class="hidden"></pre>
+  <span style="color: #2563eb; cursor: pointer; font-size: 13px;" onclick="toggleTrace()">Show/hide solver trace</span>
+  <pre id="trace-output" class="hidden"></pre>
 </div>
 
 <div class="nav-back-pill" id="nav-back-pill" role="button" aria-label="Navigate back" tabindex="0">
@@ -939,7 +943,7 @@ function renderProgress() {
   const needsFargo = activeSlots.some(function(s) { return s.source && s.source.needsRatingLookup; });
   if (needsFargo) {
     html += '<tr><td class="progress-label">Looking up official ratings</td><td class="progress-value" id="progress-fargo">'
-      + fargoBarHtml(fargoProgress, performance.now()) + '</td></tr>';
+      + progressBarHtml(fargoBarState(fargoProgress, performance.now())) + '</td></tr>';
   }
 
   // Module row
@@ -964,7 +968,7 @@ function renderProgress() {
   } else if (fargoInProgress) {
     optimizeValue = '<span class="progress-pulse">\u23F8 waiting for official ratings</span>';
   } else if (allSlotsFilled()) {
-    optimizeValue = SPINNER;
+    optimizeValue = progressBarHtml(optimizeBarState());
   } else {
     optimizeValue = '<span class="progress-blocked">\u23F8 waiting for all tournaments</span>';
   }
@@ -997,27 +1001,52 @@ function formatEta(sec) {
   return Math.floor(sec / 60) + 'm ' + String(sec % 60).padStart(2, '0') + 's';
 }
 
-function fargoBarHtml(p, nowMs) {
-  if (!p) return '<span class="progress-blocked">\u23F8 waiting for tournament data</span>';
+// Either a bar ({pct, text}) or a finished/blocked message ({html}), so the same
+// state can be rendered into a full-table rebuild or patched into a live cell.
+function fargoBarState(p, nowMs) {
+  if (!p) return { html: '<span class="progress-blocked">\u23F8 waiting for tournament data</span>' };
   if (p.done >= p.total) {
-    return '<span class="progress-done">\u2713 ' + p.resolved + ' / ' + p.total + ' players matched'
-      + (p.cached > 0 ? ' \u00B7 ' + p.cached + ' cached' : '') + '</span>';
+    return { html: '<span class="progress-done">\u2713 ' + p.resolved + ' / ' + p.total + ' players matched'
+      + (p.cached > 0 ? ' \u00B7 ' + p.cached + ' cached' : '') + '</span>' };
   }
-  var pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
   var r = fargoRate(p, nowMs);
   var bits = [p.done + ' / ' + p.total];
   if (r.rate != null) bits.push(r.rate.toFixed(1) + '/s');
   bits.push('ETA ' + formatEta(r.etaSec));
   if (p.cached > 0) bits.push(p.cached + ' cached');
-  return '<span class="fargo-bar"><span class="fargo-bar-fill" style="width:' + pct + '%"></span></span>'
-    + '<span class="fargo-bar-text">' + bits.join(' \u00B7 ') + '</span>';
+  return { pct: p.total > 0 ? Math.round((p.done / p.total) * 100) : 0, text: bits.join(' \u00B7 ') };
+}
+
+function progressBarHtml(state) {
+  if (state.html) return state.html;
+  return '<span class="progress-bar"><span class="progress-bar-fill" style="width:' + state.pct + '%"></span></span>'
+    + '<span class="progress-bar-text">' + escapeHtml(state.text) + '</span>';
+}
+
+// Patches an existing cell in place. Reassigning innerHTML every tick would
+// replace the fill element, and a brand-new node has no previous width to
+// animate from, so the CSS width transition never runs and the bar jumps.
+// (Same reason the old spinner only ever managed a quarter turn before
+// snapping back \u2014 a fresh element restarts its animation at 0deg.)
+function setProgressBar(idOrEl, state) {
+  var el = typeof idOrEl === 'string' ? document.getElementById(idOrEl) : idOrEl;
+  if (!el) return;
+  if (state.html) { el.innerHTML = state.html; return; }
+  var fill = el.querySelector('.progress-bar-fill');
+  var label = el.querySelector('.progress-bar-text');
+  if (!fill || !label) {
+    el.innerHTML = progressBarHtml({ pct: state.pct, text: '' });
+    fill = el.querySelector('.progress-bar-fill');
+    label = el.querySelector('.progress-bar-text');
+  }
+  fill.style.width = state.pct + '%';
+  label.textContent = state.text;
 }
 
 // Updates only this cell. renderProgress() rebuilds the entire table, and
 // calling it once per resolved player meant 256 rebuilds per load.
 function updateFargoRow() {
-  var el = document.getElementById('progress-fargo');
-  if (el && fargoProgress) el.innerHTML = fargoBarHtml(fargoProgress, performance.now());
+  if (fargoProgress) setProgressBar('progress-fargo', fargoBarState(fargoProgress, performance.now()));
 }
 
 // onProgress only fires when a player resolves, so on its own the ETA would
@@ -1209,6 +1238,290 @@ function optimize(players, matches, playerMap, initialValues, maxIterations, pre
 // tell they have been superseded.
 let optimizationRunId = 0;
 
+// Progress model for the joint estimate.
+//
+// The bar counts LM iterations, not IRLS passes. Per-chunk wall cost is nearly
+// constant — a traced 256-player solve measured 156 ms per chunk with a 4.8%
+// coefficient of variation, because every chunk builds the same fixed Jacobian
+// over the same residual set — so iteration count is linear in elapsed time to
+// within about a point. All the bar has to do is estimate the total.
+//
+// It used to divide by IRLS_MAX and MAX_ITERATIONS instead, and both denominators
+// miss real runs badly. That same traced run spent 70.8% of its wall time in
+// pass 0 and got 16.7% of the bar for it, then covered the remaining five passes
+// in 16% of the time: displayed progress lagged elapsed time by up to 52 points.
+// It also used only 290 of the 1000-iteration cap, so that term never bound.
+const OPT_PROFILE_KEY = 'tp_solve_profile_v1';
+const OPT_PROFILE_TTL = 30 * 24 * 3600 * 1000;
+const OPT_MIN_PASS_CHUNKS = 2;
+
+// Inner-solve stagnation cutoff. A chunk counts as stagnant when it improves the
+// objective by less than OPT_STAGNATION_TOL relative; OPT_STAGNATION_RUN of them
+// in a row ends the pass. ?stagnate=0 restores the old maxChange-only rule so a
+// before/after comparison can be captured from the same build.
+const OPT_STAGNATION_ON = new URLSearchParams(location.search).get('stagnate') !== '0';
+const OPT_STAGNATION_TOL = 1e-5;
+const OPT_STAGNATION_RUN = 3;
+
+let optimizeProgress = null;
+
+function solveProfileKey(players, matches, threshold) {
+  return 'p' + players.length + 'm' + matches.length + 't' + threshold;
+}
+
+function readSolveProfile(key) {
+  try {
+    const store = JSON.parse(localStorage.getItem(OPT_PROFILE_KEY)) || {};
+    const e = store[key];
+    if (!e || Date.now() - e.t > OPT_PROFILE_TTL) return null;
+    return e;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Reloading the same tournament, and editing a rating, both re-solve a problem of
+// the same shape — so the run the user just watched is the best possible estimate
+// of the next one. Only finalize() records, and it returns early when stale, so
+// superseded runs cannot teach the cache.
+function writeSolveProfile(key, iterations, msPerIteration) {
+  try {
+    const store = JSON.parse(localStorage.getItem(OPT_PROFILE_KEY)) || {};
+    const prev = store[key];
+    store[key] = prev
+      ? { i: 0.5 * prev.i + 0.5 * iterations, ms: 0.5 * prev.ms + 0.5 * msPerIteration, t: Date.now() }
+      : { i: iterations, ms: msPerIteration, t: Date.now() };
+    const keys = Object.keys(store);
+    if (keys.length > 200) {
+      keys.sort(function(a, b) { return store[a].t - store[b].t; });
+      for (let i = 0; i < keys.length - 200; i++) delete store[keys[i]];
+    }
+    localStorage.setItem(OPT_PROFILE_KEY, JSON.stringify(store));
+  } catch (e) { /* profiles are a convenience; a failed write just means a cold bar */ }
+}
+
+// Mutating half of the model, called once per chunk. Kept separate from
+// optimizeBarState() because traceStep() also calls that — folding the monotone
+// clamp into a function the tracer invokes would advance the bar twice per chunk.
+function noteOptimizeChunk(maxChange, chunkMs) {
+  const p = optimizeProgress;
+  p.chunks++;
+  p.passChunks++;
+  p.iterations = p.chunks * p.chunkSize;
+  if (maxChange != null && isFinite(maxChange)) p.lastChange = maxChange;
+
+  // The first chunk pays JIT warm-up — 263 ms against a 156 ms steady state in the
+  // trace — so it must not enter the average or the opening ETA reads ~70% high.
+  if (p.chunks > 1 && chunkMs > 0) {
+    const per = chunkMs / p.chunkSize;
+    p.msPerIteration = (p.msPerIteration == null) ? per : 0.7 * p.msPerIteration + 0.3 * per;
+  }
+
+  // What a warm pass (index >= 1) costs. Under the stagnation cutoff this is very
+  // nearly constant — one productive chunk plus OPT_STAGNATION_RUN stagnant ones —
+  // and a traced run measured 5, 4, 4, 5, 4, 4. Without the cutoff, passes end on
+  // maxChange instead and run 7, 2, 2, 2, 2, 2. Two different rules, two different
+  // constants; learn the real figure as soon as one warm pass has completed.
+  const warmCost = p.warmPassChunks || (OPT_STAGNATION_ON ? OPT_STAGNATION_RUN + 1.5 : 3);
+
+  let passLeft;
+  if (p.pass > 0) {
+    passLeft = Math.max(0, Math.ceil(warmCost) - p.passChunks);
+  } else {
+    // Pass 0 is the cold start and the only genuinely uncertain span (15 of 41
+    // chunks under the cutoff, 41 of 58 without it). Prefer the previous solve's
+    // measurement. Fall back to the 1/n crawl law only when there is no profile,
+    // and clamp it hard: maxChange rebounds mid-pass — 21.8 up to 47.5 in the
+    // trace — and the raw law multiplies that by the chunk index, which pinned the
+    // estimate at MAX_ITERATIONS and drove the ETA to 17 s on a 6.8 s run.
+    let pass0Total;
+    if (p.seedIterations) {
+      pass0Total = Math.max(2, p.seedIterations / p.chunkSize - p.passMax * warmCost);
+    } else if (p.lastChange != null && p.lastChange > p.threshold) {
+      pass0Total = Math.min(120, Math.ceil(p.lastChange * p.passChunks / p.threshold));
+    } else {
+      pass0Total = p.passChunks + 2;
+    }
+    // Overrunning the estimate has to widen it, or the bar pins and the ETA sticks
+    // at zero while the solve is still going.
+    passLeft = Math.max(0, Math.ceil(p.passChunks * 0.12), pass0Total - p.passChunks);
+  }
+
+  const future = Math.round((p.passMax - p.pass) * warmCost);
+  const est = (p.chunks + passLeft + future) * p.chunkSize;
+  p.estIterations = Math.min(p.maxIterations, Math.max(est, p.iterations + p.chunkSize));
+
+  // The bar can consume the raw estimate — it is monotone-clamped, so noise only
+  // ever costs it a pause. The ETA cannot: it is a difference, so every wobble in
+  // the estimate shows up at full amplitude and a countdown that jumps 2s -> 9s
+  // -> 3s is worse than no countdown. Smooth it, and let it rise only slowly:
+  // over-running the estimate is common and mildly annoying, whereas a countdown
+  // that keeps growing reads as broken.
+  const target = p.estIterations;
+  if (p.estSmooth == null) {
+    p.estSmooth = target;
+  } else {
+    const alpha = target < p.estSmooth ? 0.3 : 0.12;
+    p.estSmooth = (1 - alpha) * p.estSmooth + alpha * target;
+  }
+  p.estSmooth = Math.max(p.estSmooth, p.iterations + p.chunkSize);
+}
+
+function optimizeBarState() {
+  var p = optimizeProgress;
+  if (!p) return { pct: 0, text: 'starting…' };
+  // The first chunk has no previous parameter vector, so maxChange is null and
+  // there is nothing to extrapolate from — the estimate collapses to the floor
+  // and the bar would open near 50%, which the monotone clamp would then lock in
+  // for the rest of the run. Report nothing until there is evidence.
+  if (p.chunks < 2 || p.lastChange == null) {
+    var warmSec = (performance.now() - p.startedAt) / 1000;
+    return { pct: 0, text: p.iterations + ' iterations · ' + warmSec.toFixed(1) + 's elapsed' };
+  }
+  var raw = p.iterations / p.estIterations;
+  // Past 90% each further iteration buys an exponentially smaller slice, so a run
+  // that outlives its estimate keeps creeping instead of pinning and then jumping.
+  var f = raw <= 0.9 ? raw : 0.9 + 0.09 * (1 - Math.exp(-(raw - 0.9) * 3));
+  // Never report 100% from an estimate; finalize() writes the done row. Monotone
+  // because the estimate can be revised upward and a bar that reverses reads broken.
+  f = Math.min(0.99, Math.max(p.shownFraction, f));
+  p.shownFraction = f;
+
+  var elapsedSec = (performance.now() - p.startedAt) / 1000;
+  var bits = [p.iterations + ' iterations'];
+  if (elapsedSec > 0.25 && p.iterations > 0) bits.push(Math.round(p.iterations / elapsedSec) + '/s');
+  // Remaining iterations times their measured cost, not elapsed * (1-f)/f — the
+  // latter inherits every error in f, and goes badly wrong while f is clamped.
+  // Until there is a measurement to quote, show elapsed rather than invent a
+  // countdown: a missing ETA is information, a wrong one is not.
+  // Quote a countdown only with a real basis for one: a profile from a previous
+  // solve, or a completed warm pass in this one. On a first-ever load during
+  // pass 0 there is neither — the only signal is the 1/n crawl law, which predicts
+  // maxChange crossing the threshold, and that is no longer what ends a pass. It
+  // read 152% high on a traced cold run. Show elapsed instead; a missing ETA is
+  // information, a wrong one is not.
+  var haveBasis = p.seedIterations || p.warmPassChunks;
+  if (p.msPerIteration != null && p.estSmooth != null && haveBasis) {
+    bits.push('ETA ' + formatEta(Math.max(0, p.estSmooth - p.iterations) * p.msPerIteration / 1000));
+  } else {
+    bits.push(elapsedSec.toFixed(1) + 's elapsed');
+  }
+  return { pct: Math.round(f * 100), text: bits.join(' · ') };
+}
+
+function updateOptimizeRow() {
+  setProgressBar('progress-optimize', optimizeBarState());
+}
+
+// =====================================================
+// Optimizer tracing
+// =====================================================
+// Records one row per chunked LM step — wall time, iteration counts, maxChange,
+// parameter error and the percentage the bar actually displayed — then renders
+// it into the debug section as a fixed-width table. The point is to expose the
+// *shape* of a solve: whether displayed progress tracks elapsed time, and how
+// far short of the IRLS_MAX / MAX_ITERATIONS caps a real run stops. Bounded by
+// MAX_ITERATIONS / CHUNK steps, so at most ~200 rows.
+let optimizeTrace = null;
+
+function traceStart(meta) {
+  optimizeTrace = Object.assign({ steps: [] }, meta);
+}
+
+function traceStep(row) {
+  if (optimizeTrace) optimizeTrace.steps.push(row);
+}
+
+function pad(v, w, right) {
+  var s = (v == null) ? '-' : String(v);
+  while (s.length < w) s = right ? s + ' ' : ' ' + s;
+  return s;
+}
+
+function sig(v, digits) {
+  if (v == null || !isFinite(v)) return '-';
+  return Number(v).toPrecision(digits || 4);
+}
+
+function traceText(t) {
+  var lines = [];
+  lines.push('config  players=' + t.players + ' matches=' + t.matches + ' residuals=' + t.residuals
+    + ' chunk=' + t.chunk + ' irlsMax=' + t.irlsMax + ' maxIter=' + t.maxIterations
+    + ' convThreshold=' + t.convergenceThreshold + ' weightTol=' + t.irlsWeightTol);
+  lines.push('result  totalMs=' + t.totalMs + ' totalIterations=' + t.totalIterations
+    + ' passes=' + t.passes + ' pctAtFinish=' + t.finalPct
+    + ' steps=' + t.steps.filter(function(s) { return !s.event; }).length
+    + ' stagnationCutoff=' + (t.stagnationOn ? 'ON' : 'OFF')
+    + ' finalError=' + sig(t.finalError, 10));
+  var d = t.ratings;
+  if (d) {
+    lines.push('answer  checksum=' + d.checksum + ' players=' + d.n + ' (anchored=' + d.anchored
+      + ' free=' + d.free + ') mean=' + d.mean);
+    lines.push('        top5   ' + d.top5.map(function(x) { return x.n + ' ' + x.r; }).join(' | '));
+    lines.push('        bottom5 ' + d.bottom5.map(function(x) { return x.n + ' ' + x.r; }).join(' | '));
+  }
+  lines.push('');
+  lines.push([pad('step', 4), pad('tMs', 7), pad('stepMs', 6), pad('pass', 4), pad('totalIt', 7),
+              pad('maxChange', 10), pad('paramError', 14), pad('rel', 11), pad('sR', 2),
+              pad('est', 5), pad('estS', 5), pad('ETAs', 6), pad('pct', 4)].join(' '));
+  var n = 0;
+  t.steps.forEach(function(s) {
+    if (s.event === 'reweight') {
+      lines.push('   -- reweight -> pass ' + s.pass + ' @ tMs=' + s.tMs + ' totalIt=' + s.totalIterations
+        + ' maxWeightChange=' + sig(s.maxWeightChange) + ' scale=' + sig(s.scale));
+      return;
+    }
+    n++;
+    // parameterError to 10 s.f.: at 5 the objective read "flat" across 29 chunks
+    // and that was the instrumentation's resolution limit, not necessarily the
+    // solver's. The stagnation cutoff is tuned against this column, so it has to
+    // resolve improvements far below the display's precision.
+    lines.push([pad(n, 4), pad(s.tMs, 7), pad(s.stepMs, 6), pad(s.pass, 4),
+                pad(s.totalIterations, 7), pad(sig(s.maxChange, 3), 10), pad(sig(s.parameterError, 10), 14),
+                pad(s.rel != null ? s.rel.toExponential(2) : null, 11), pad(s.stagRun, 2),
+                pad(s.est, 5), pad(s.estSmooth, 5),
+                pad(s.etaSec != null ? s.etaSec.toFixed(1) : null, 6), pad(s.pct, 4)].join(' ')
+      + (s.stagnated ? '  <- stagnated' : (s.converged ? '  <- converged' : '')));
+  });
+  return lines.join('\n');
+}
+
+// Compact enough to paste, specific enough to diff. The checksum catches any
+// change at all; the sorted extremes and the anchored/free split show *where* a
+// change landed — the unanchored players are the ones expected to move, since
+// nothing in the model pins them.
+function ratingsDigest(players, values) {
+  var rounded = players.map(function(p) { return Math.round(values[p.index]); });
+  var sum = 0;
+  for (var i = 0; i < rounded.length; i++) sum = (sum * 31 + rounded[i]) % 2147483647;
+  var anchored = 0;
+  players.forEach(function(p) { if (p.skillLevel != null && p.skillLevel >= 0) anchored++; });
+  var sorted = players.map(function(p) {
+    return { n: p.name, r: Math.round(values[p.index]) };
+  }).sort(function(a, b) { return b.r - a.r; });
+  var mean = rounded.reduce(function(a, b) { return a + b; }, 0) / (rounded.length || 1);
+  return {
+    checksum: sum,
+    n: rounded.length,
+    anchored: anchored,
+    free: rounded.length - anchored,
+    mean: Math.round(mean * 100) / 100,
+    min: sorted.length ? sorted[sorted.length - 1] : null,
+    max: sorted.length ? sorted[0] : null,
+    top5: sorted.slice(0, 5),
+    bottom5: sorted.slice(-5),
+  };
+}
+
+function traceFinish(meta) {
+  if (!optimizeTrace) return;
+  Object.assign(optimizeTrace, meta);
+  var el = document.getElementById('trace-output');
+  if (el) el.textContent = traceText(optimizeTrace);
+  console.log('[trace]', optimizeTrace);
+  optimizeTrace = null;
+}
+
 function runOptimization() {
   if (!cachedParsedData) return;
 
@@ -1242,10 +1555,52 @@ function runOptimization() {
   let lastResult = null;
   const t0 = performance.now();
 
+  const profileKey = solveProfileKey(players, matches, convergenceThreshold);
+  const profile = readSolveProfile(profileKey);
+
+  optimizeProgress = {
+    startedAt: t0,
+    pass: 0,
+    passMax: IRLS_MAX,
+    maxIterations: MAX_ITERATIONS,
+    chunkSize: CHUNK,
+    threshold: convergenceThreshold,
+    chunks: 0,
+    passChunks: 0,
+    lastPassChunks: 0,
+    iterations: 0,
+    lastChange: null,
+    msPerIteration: profile ? profile.ms : null,
+    seedIterations: profile ? profile.i : null,
+    // Before the first chunk lands there is no evidence at all; seed the estimate
+    // so the opening frame is not a division by zero.
+    estIterations: profile ? profile.i : CHUNK * 20,
+    shownFraction: 0,
+  };
+
+  traceStart({
+    players: players.length,
+    matches: matches.length,
+    residuals: residuals.length,
+    chunk: CHUNK,
+    maxIterations: MAX_ITERATIONS,
+    irlsMax: IRLS_MAX,
+    convergenceThreshold: convergenceThreshold,
+    irlsWeightTol: IRLS_WEIGHT_TOL,
+  });
+
+  // Objective value at the previous chunk *of the current pass*. Reset on every
+  // reweight, because updateCauchyWeights() changes the objective itself — the
+  // traced run saw parameterError drop 164.43 -> 72.755 across one reweight, which
+  // is a change of definition, not progress, and must not be compared across.
+  let passLastError = null;
+  let stagnantRun = 0;
+
   // Inner solve: chunked LM stepping to convergence with the CURRENT weights.
   function innerSolve(onConverged) {
     function step() {
       if (isStale()) return;
+      const stepT0 = performance.now();
       try {
         const remaining = MAX_ITERATIONS - totalIterations;
         if (remaining <= 0) { onConverged(lastResult); return; }
@@ -1255,16 +1610,64 @@ function runOptimization() {
         totalIterations += result.iterations;
         currentValues = Array.from(result.parameterValues);
 
-        let converged = result.iterations < CHUNK;
-        if (!converged && prevValues) {
-          const maxChange = Math.max.apply(null, currentValues.map(function(v, i) { return Math.abs(v - prevValues[i]); }));
-          converged = maxChange < convergenceThreshold;
+        let maxChange = null;
+        if (prevValues) {
+          maxChange = Math.max.apply(null, currentValues.map(function(v, i) { return Math.abs(v - prevValues[i]); }));
         }
 
-        const optimizeEl = document.getElementById('progress-optimize');
-        if (optimizeEl && totalIterations < MAX_ITERATIONS) {
-          optimizeEl.innerHTML = SPINNER + ' IRLS pass ' + (irlsIteration + 1) + '/' + IRLS_MAX + ' \u00B7 ' + totalIterations + ' iterations\u2026';
+        // Stop when the objective stops moving, not only when every parameter has
+        // settled. maxChange is a Math.max over all 256 ratings, so a single
+        // barely-identifiable player holds the whole solve hostage: 256 parameters
+        // are constrained by 168 match residuals (which fix only rating
+        // *differences*) plus 192 prior residuals, leaving 64 players with no
+        // anchor at all. A traced 256-player run spent chunks 12-41 of pass 0 —
+        // 145 LM iterations, 4.6 s, half the total runtime — with parameterError
+        // pinned at 164.43 to five significant figures while one such player
+        // drifted along a flat valley. That is not convergence, it is wandering.
+        //
+        // Requiring several consecutive stagnant chunks guards against LM
+        // plateauing briefly and then breaking through.
+        let stagnated = false;
+        let relImprovement = null;
+        if (passLastError != null) {
+          const denom = Math.max(Math.abs(result.parameterError), 1);
+          relImprovement = (passLastError - result.parameterError) / denom;
+          if (OPT_STAGNATION_ON) {
+            stagnantRun = (relImprovement < OPT_STAGNATION_TOL) ? stagnantRun + 1 : 0;
+            stagnated = stagnantRun >= OPT_STAGNATION_RUN;
+          }
         }
+        passLastError = result.parameterError;
+
+        const converged = result.iterations < CHUNK
+          || (maxChange != null && maxChange < convergenceThreshold)
+          || stagnated;
+
+        noteOptimizeChunk(maxChange, performance.now() - stepT0);
+        if (totalIterations < MAX_ITERATIONS) updateOptimizeRow();
+
+        traceStep({
+          tMs: Math.round(performance.now() - t0),
+          stepMs: Math.round(performance.now() - stepT0),
+          pass: irlsIteration,
+          chunkIterations: result.iterations,
+          totalIterations: totalIterations,
+          maxChange: maxChange,
+          parameterError: result.parameterError,
+          // rel is the exact quantity compared against OPT_STAGNATION_TOL, so the
+          // tolerance can be re-tuned straight off this column instead of inferred
+          // from differences of a rounded parameterError.
+          rel: relImprovement,
+          stagRun: stagnantRun,
+          est: optimizeProgress.estIterations,
+          estSmooth: optimizeProgress.estSmooth != null ? Math.round(optimizeProgress.estSmooth) : null,
+          etaSec: (optimizeProgress.msPerIteration != null && optimizeProgress.estSmooth != null)
+            ? Math.max(0, optimizeProgress.estSmooth - optimizeProgress.iterations) * optimizeProgress.msPerIteration / 1000
+            : null,
+          pct: optimizeBarState().pct,
+          converged: converged,
+          stagnated: stagnated,
+        });
 
         if (converged || totalIterations >= MAX_ITERATIONS) {
           onConverged(result);
@@ -1287,6 +1690,30 @@ function runOptimization() {
       const reweight = updateCauchyWeights(currentValues, residuals);
       lastScale = reweight.scale;
       irlsIteration++;
+      traceStep({
+        tMs: Math.round(performance.now() - t0),
+        event: 'reweight',
+        pass: irlsIteration,
+        totalIterations: totalIterations,
+        maxWeightChange: reweight.maxWeightChange,
+        scale: reweight.scale,
+      });
+      // The pass that just ended was index irlsIteration - 1. Warm passes cost a
+      // near-fixed number of chunks, so one completed sample already predicts the
+      // rest of the run well; average so a single odd pass cannot skew it.
+      if (irlsIteration - 1 >= 1 && optimizeProgress.passChunks > 0) {
+        optimizeProgress.warmPassChunks = optimizeProgress.warmPassChunks
+          ? 0.5 * optimizeProgress.warmPassChunks + 0.5 * optimizeProgress.passChunks
+          : optimizeProgress.passChunks;
+      }
+      optimizeProgress.pass = irlsIteration;
+      optimizeProgress.lastPassChunks = optimizeProgress.passChunks;
+      optimizeProgress.passChunks = 0;
+      optimizeProgress.lastChange = null;
+      // Reweighting redefines the objective, so the stagnation comparison has to
+      // start over rather than measure across the discontinuity.
+      passLastError = null;
+      stagnantRun = 0;
 
       // Stop when weights stabilize, we hit the IRLS cap, or the LM iteration cap.
       const weightsStable = reweight.maxWeightChange < IRLS_WEIGHT_TOL;
@@ -1325,6 +1752,20 @@ function runOptimization() {
     const meta = { irlsIterations: irlsIteration, cauchyC: CAUCHY_C, scale: lastScale };
     displayResults(players, result, meta);
     setProgressDone('progress-optimize', elapsed + ' ms \u00B7 ' + totalIterations + ' iterations \u00B7 ' + irlsIteration + ' IRLS passes');
+    writeSolveProfile(profileKey, totalIterations,
+      totalIterations > 0 ? elapsed / totalIterations : 0);
+    traceFinish({
+      totalMs: elapsed,
+      totalIterations: totalIterations,
+      passes: irlsIteration,
+      finalPct: optimizeBarState().pct,
+      stagnationOn: OPT_STAGNATION_ON,
+      finalError: result.parameterError,
+      // A faster solve is worthless if it lands somewhere else, and the only
+      // channel out of the browser is copy-paste — so summarise the answer
+      // compactly enough to diff two runs by eye.
+      ratings: ratingsDigest(players, result.parameterValues),
+    });
   }
 
   innerSolve(afterSolve);
@@ -1626,13 +2067,17 @@ window.handleReoptimize = function() {
     }
   }
   manualRatings.clear();
-  var optimizeEl = document.getElementById('progress-optimize');
-  if (optimizeEl) optimizeEl.innerHTML = SPINNER;
+  optimizeProgress = null;
+  updateOptimizeRow();
   runOptimization();
 };
 
 window.toggleDebug = function() {
   document.getElementById('debug-output').classList.toggle('hidden');
+};
+
+window.toggleTrace = function() {
+  document.getElementById('trace-output').classList.toggle('hidden');
 };
 
 function updateNavPill() {
