@@ -134,6 +134,17 @@
   .pse-item.active, .pse-item:hover { background: #1e293b; }
   .pse-name mark { background: none; color: #60a5fa; font-weight: 700; }
   .pse-meta { margin-left: auto; padding-left: 8px; color: #64748b; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* Country flags. Emoji for everything except Taiwan, whose flag the
+     emoji font cannot be relied on for. Kept byte-identical to
+     PoolRadar so the two sites render the same field the same way. */
+  .pf { margin-right: 4px; font-size: 14.3px; line-height: 1; vertical-align: -0.06em; }
+  /* Taiwan is drawn from an inlined SVG: Windows renders no flag emoji at all,
+     and iOS hides this one in some regions. A white silhouette of the blossom
+     sits behind the emblem, stroked so it reaches just past the blue outline —
+     without it the dark blue trace vanishes against the dark page. Cropped to
+     the artwork and sized 30% over the emoji footprint. */
+  .flag-img { display: inline-block; background-position: center; background-size: contain; background-repeat: no-repeat; width: 1.36em; height: 0.91em; vertical-align: -0.08em; }
+  .flag-tw { width: 0.9em; height: 0.9em; vertical-align: -0.05em; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-8.7 -21 531.4 531.9'%3E%3Cg transform='matrix(1.0350939,0,0,1.0479042,-208.77414,-69.356587)'%3E%3Cpath d='m 686.676,277.504 c 0,-66.792 -51.373,-121.569 -116.787,-126.915 -17.61,-49.223 -64.67,-84.403 -119.9,-84.403 -55.257,0 -102.275,35.181 -119.886,84.403 -65.415,5.346 -116.814,60.123 -116.814,126.915 0,39.217 17.776,74.315 45.695,97.659 -2.536,9.991 -3.873,20.492 -3.873,31.267 0,70.334 57.009,127.356 127.356,127.356 24.805,0 47.955,-7.083 67.522,-19.36 19.568,12.277 42.691,19.36 67.536,19.36 70.32,0 127.344,-57.022 127.344,-127.356 0,-10.774 -1.339,-21.275 -3.874,-31.267 27.906,-23.344 45.681,-58.441 45.681,-97.659 z' fill='%23fff' stroke='%23fff' stroke-width='40' stroke-linejoin='round' /%3E%3Cg clip-rule='evenodd' fill-rule='evenodd'%3E%3Cpath d='m 686.676,277.504 c 0,-66.792 -51.373,-121.569 -116.787,-126.915 -17.61,-49.223 -64.67,-84.403 -119.9,-84.403 -55.257,0 -102.275,35.181 -119.886,84.403 -65.415,5.346 -116.814,60.123 -116.814,126.915 0,39.217 17.776,74.315 45.695,97.659 -2.536,9.991 -3.873,20.492 -3.873,31.267 0,70.334 57.009,127.356 127.356,127.356 24.805,0 47.955,-7.083 67.522,-19.36 19.568,12.277 42.691,19.36 67.536,19.36 70.32,0 127.344,-57.022 127.344,-127.356 0,-10.774 -1.339,-21.275 -3.874,-31.267 27.906,-23.344 45.681,-58.441 45.681,-97.659 z' fill='%23ffffff' /%3E%3Cpath d='m 451.725,190.979 c -32.534,0 -58.923,26.402 -58.923,58.91 0,32.562 26.389,58.952 58.923,58.952 32.563,0 58.952,-26.39 58.952,-58.952 0,-32.508 -26.389,-58.91 -58.952,-58.91 z m -0.014,87.339 c -15.682,0 -28.4,-12.707 -28.4,-28.43 0,-15.668 12.719,-28.415 28.4,-28.415 15.71,0 28.442,12.746 28.442,28.415 10e-4,15.723 -12.732,28.43 -28.442,28.43 z' fill='%23003283' /%3E%3Cpath d='m 686.676,277.504 c 0,-66.792 -51.373,-121.569 -116.787,-126.915 -17.61,-49.223 -64.67,-84.403 -119.9,-84.403 -55.257,0 -102.275,35.181 -119.886,84.403 -65.415,5.346 -116.814,60.123 -116.814,126.915 0,39.217 17.776,74.315 45.695,97.659 -2.536,9.991 -3.873,20.492 -3.873,31.267 0,70.334 57.009,127.356 127.356,127.356 24.805,0 47.955,-7.083 67.522,-19.36 19.568,12.277 42.691,19.36 67.536,19.36 70.32,0 127.344,-57.022 127.344,-127.356 0,-10.774 -1.339,-21.275 -3.874,-31.267 27.906,-23.344 45.681,-58.441 45.681,-97.659 z m -67.949,85.864 c 5.637,12.953 8.75,27.215 8.75,42.234 0,58.621 -47.5,106.108 -106.106,106.108 -26.403,0 -50.587,-9.66 -69.149,-25.617 -18.575,15.957 -42.732,25.617 -69.148,25.617 -58.621,0 -106.107,-47.487 -106.107,-106.108 0,-14.371 2.88,-28.069 8.048,-40.594 -29.931,-18.784 -49.857,-52.035 -49.857,-89.972 0,-58.607 47.486,-106.107 106.094,-106.107 2.205,0 4.354,0.042 6.504,0.221 11.629,-45.985 53.273,-80.007 102.854,-80.007 49.566,0 91.21,34.022 102.84,80.007 2.149,-0.179 4.342,-0.221 6.505,-0.221 58.607,0 106.106,47.5 106.106,106.107 0,36.821 -18.823,69.301 -47.334,88.332 z' fill='%23003283' /%3E%3Cpath d='m 651.797,277.752 c 0,-53.702 -43.488,-97.191 -97.19,-97.191 -3.06,0 -6.159,0.179 -9.177,0.427 -9.688,-43.448 -48.479,-75.873 -94.82,-75.873 -46.356,0 -85.134,32.425 -94.808,75.873 -3.004,-0.248 -6.063,-0.427 -9.122,-0.427 -53.702,0 -97.192,43.489 -97.192,97.191 0,35.912 19.499,67.273 48.533,84.101 -5.153,11.85 -8.019,24.846 -8.019,38.583 0,53.701 43.545,97.191 97.205,97.191 24.97,0 47.748,-9.439 64.973,-24.9 17.212,15.461 39.989,24.9 64.96,24.9 53.659,0 97.15,-43.49 97.15,-97.191 0,-14.248 -3.06,-27.808 -8.614,-40.044 27.699,-17.102 46.121,-47.707 46.121,-82.64 z m -62.615,76.521 c 8.792,13.435 13.917,29.462 13.917,46.687 0,47.128 -38.198,85.325 -85.312,85.325 -26.61,0 -50.312,-12.14 -65.965,-31.169 -15.655,19.029 -39.384,31.169 -65.952,31.169 -47.155,0 -85.354,-38.197 -85.354,-85.325 0,-16.716 4.823,-32.342 13.132,-45.516 -30.537,-12.968 -51.979,-43.284 -51.979,-78.547 0,-47.155 38.198,-85.354 85.354,-85.354 6.711,0 13.285,0.812 19.595,2.288 4.438,-42.939 40.734,-76.439 84.858,-76.439 43.917,0 80.089,33.197 84.788,75.873 5.513,-1.116 11.189,-1.722 17.005,-1.722 47.113,0 85.313,38.198 85.313,85.354 10e-4,34.272 -20.201,63.817 -49.4,77.376 z' fill='%23e41f20' /%3E%3Cg fill='%23ffffff'%3E%3Cpath d='m 444.684,217.464 h 14.814 l -7.056,-22.558 z' /%3E%3Cpath d='m 429.402,225.346 12.829,-7.4 -17.418,-16.068 z' /%3E%3Cpath d='m 420.1,239.815 7.414,-12.87 -23.082,-5.169 z' /%3E%3Cpath d='m 419.288,256.958 v -14.814 l -22.572,7.055 z' /%3E%3Cpath d='m 427.169,272.239 -7.414,-12.829 -16.012,17.404 z' /%3E%3Cpath d='m 441.611,281.542 -12.816,-7.401 -5.209,23.082 z' /%3E%3Cpath d='m 458.767,282.369 h -14.813 l 7.069,22.558 z' /%3E%3Cpath d='m 474.078,274.485 -12.858,7.401 17.433,16.026 z' /%3E%3Cpath d='m 483.337,260.017 -7.386,12.829 23.109,5.168 z' /%3E%3Cpath d='m 484.164,242.874 v 14.814 l 22.599,-7.055 z' /%3E%3Cpath d='m 476.323,227.592 7.4,12.83 16.027,-17.405 z' /%3E%3Cpath d='m 461.854,218.291 12.829,7.399 5.167,-23.082 z' /%3E%3C/g%3E%3C/g%3E%3Cpath d='m 409.544,366.854 c 0,-20.754 -16.784,-37.552 -37.551,-37.552 -20.753,0 -37.55,16.798 -37.55,37.552 0,20.752 16.797,37.551 37.55,37.551 1.131,0 2.205,-0.042 3.28,-0.125 -0.083,-0.991 -0.124,-1.984 -0.124,-2.976 0,-1.116 0.041,-2.246 0.124,-3.321 -1.075,0.139 -2.149,0.179 -3.28,0.179 -17.266,0 -31.293,-13.999 -31.293,-31.308 0,-17.268 14.027,-31.309 31.293,-31.309 17.321,0 31.309,14.041 31.309,31.309 0,13.903 -9.04,25.658 -21.565,29.75 -0.221,1.518 -0.345,3.102 -0.345,4.7 0,0.646 0.041,1.294 0.054,1.888 16.179,-4.175 28.098,-18.851 28.098,-36.338 z' fill='%230083ce' /%3E%3Cpath d='m 572.301,366.854 c 0,20.752 -16.784,37.551 -37.551,37.551 -19.636,0 -35.73,-15.035 -37.413,-34.244 2.232,0.221 4.383,0.689 6.45,1.379 2.287,15.075 15.295,26.622 30.963,26.622 17.322,0 31.309,-13.999 31.309,-31.308 0,-17.268 -13.986,-31.309 -31.309,-31.309 -16.618,0 -30.22,13.008 -31.213,29.364 -2.024,-0.509 -4.092,-0.854 -6.2,-1.033 1.503,-19.332 17.694,-34.574 37.413,-34.574 20.767,10e-4 37.551,16.799 37.551,37.552 z' fill='%23e61446' /%3E%3Cpath d='m 525.326,403.192 c -0.992,16.439 -14.595,29.42 -31.268,29.42 -17.268,0 -31.281,-14.015 -31.281,-31.308 0,-13.918 9.04,-25.673 21.554,-29.765 0.219,-1.544 0.343,-3.088 0.343,-4.686 0,-0.648 0,-1.295 -0.04,-1.944 -16.179,4.23 -28.127,18.907 -28.127,36.395 0,20.739 16.826,37.563 37.552,37.563 19.732,0 35.911,-15.24 37.469,-34.588 -2.152,-0.178 -4.219,-0.522 -6.202,-1.087 z m -31.268,-33.196 c 15.724,0 28.731,11.548 30.964,26.608 2.066,0.689 4.217,1.172 6.464,1.379 -1.682,-19.195 -17.791,-34.229 -37.428,-34.229 -1.075,0 -2.149,0.04 -3.226,0.123 0.084,0.992 0.084,1.985 0.084,2.978 0,1.115 -0.042,2.231 -0.124,3.307 1.075,-0.125 2.191,-0.166 3.266,-0.166 z' fill='%23009c45' /%3E%3Cpath d='m 450.14,404.28 c -1.529,19.348 -17.72,34.588 -37.44,34.588 -20.766,0 -37.55,-16.824 -37.55,-37.563 0,-17.487 11.919,-32.164 28.097,-36.395 0.042,0.649 0.056,1.296 0.056,1.944 0,1.598 -0.124,3.142 -0.344,4.686 -12.526,4.092 -21.566,15.847 -21.566,29.765 0,17.293 14.015,31.308 31.308,31.308 16.619,0 30.247,-12.98 31.24,-29.378 1.997,0.522 4.065,0.866 6.199,1.045 z m -40.719,-34.119 c 0.083,-1.075 0.124,-2.191 0.124,-3.307 0,-0.992 0,-1.985 -0.096,-2.978 1.074,-0.083 2.149,-0.123 3.251,-0.123 19.637,0 35.732,15.034 37.414,34.229 -2.232,-0.207 -4.396,-0.689 -6.463,-1.379 -2.26,-15.061 -15.242,-26.608 -30.951,-26.608 -1.102,10e-4 -2.204,0.042 -3.279,0.166 z' fill='%23f7b000' /%3E%3Cpath d='m 453.393,398.162 c -15.723,0 -28.704,-11.547 -30.963,-26.622 -2.068,-0.689 -4.217,-1.158 -6.464,-1.379 1.681,19.209 17.791,34.244 37.427,34.244 1.075,0 2.164,-0.042 3.252,-0.125 -0.096,-0.991 -0.139,-1.984 -0.139,-2.976 0,-1.116 0.069,-2.246 0.152,-3.321 -1.075,0.139 -2.15,0.179 -3.265,0.179 z m 0,-68.859 c -19.747,0 -35.925,15.242 -37.427,34.574 2.108,0.18 4.175,0.524 6.188,1.033 1.006,-16.356 14.606,-29.364 31.239,-29.364 17.281,0 31.28,14.041 31.28,31.309 0,13.903 -9.025,25.658 -21.538,29.75 -0.234,1.518 -0.358,3.102 -0.358,4.7 0,0.646 0,1.294 0.042,1.888 16.191,-4.176 28.139,-18.852 28.139,-36.338 0,-20.754 -16.839,-37.552 -37.565,-37.552 z' fill='%23000006' /%3E%3C/g%3E%3C/svg%3E"); }
   .pse-empty { padding: 18px 12px; text-align: center; color: #64748b; font-size: 14px; }
 </style>
 </head>
@@ -302,6 +313,52 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// =====================================================
+// Country flags
+// =====================================================
+// Only WNT publishes a country, so these are no-ops for the other sources.
+// Kept in step with PoolRadar, which shows the same field.
+
+// ISO-3166-1 alpha-2 -> regional indicator pair. Avoids shipping flag assets;
+// WNT uses 'unknown' for unaffiliated players, which fails the length check.
+function wntFlag(code) {
+  if (!code || code.length !== 2 || !/^[a-z]{2}$/i.test(code)) return '';
+  var cc = code.toUpperCase();
+  return String.fromCodePoint(0x1F1E6 + cc.charCodeAt(0) - 65, 0x1F1E6 + cc.charCodeAt(1) - 65);
+}
+
+// WNT reports some countries under the name their federation competes as
+// rather than the country's own. Show the country's own name.
+var COUNTRY_NAME_OVERRIDE = { tw: 'Taiwan' };
+
+function countryDisplayName(code, rawName) {
+  return (code && COUNTRY_NAME_OVERRIDE[code.toLowerCase()]) || rawName || code || '';
+}
+
+// Codes drawn from an inlined SVG rather than the regional-indicator emoji.
+// Windows ships no flag glyphs at all, and iOS suppresses this one in some
+// regions, so the emoji cannot be relied on here. The art lives in CSS.
+var FLAG_IMG = { tw: true };
+
+function countryFlagHtml(code, name, cls) {
+  if (!code) return '';
+  var cc = String(code).toLowerCase();
+  var label = escapeHtml(countryDisplayName(cc, name));
+  cls = cls || 'pf';
+  if (FLAG_IMG[cc]) {
+    return '<span class="' + cls + ' flag-img flag-' + cc + '" role="img" aria-label="' +
+      label + '" title="' + label + '"></span>';
+  }
+  var flag = wntFlag(cc);
+  if (!flag) return '';
+  return '<span class="' + cls + '" title="' + label + '">' + flag + '</span>';
+}
+
+function playerFlagHtml(p) {
+  if (!p || !p.country) return '';
+  return countryFlagHtml(p.country, p.countryName, 'pf');
 }
 
 // Start loading optimizer module now (after local scripts, to avoid blocking them)
@@ -757,6 +814,8 @@ function aggregateSlots() {
           skillLevel: p.skillLevel,
           fargoId: p.fargoId,
           place: p.place,
+          country: p.country || null,
+          countryName: p.countryName || null,
           index: 0,
         });
       } else {
@@ -766,6 +825,11 @@ function aggregateSlots() {
         }
         if (!existing.fargoId && p.fargoId) {
           existing.fargoId = p.fargoId;
+        }
+        // One WNT slot among several DigitalPool ones is enough to place a flag.
+        if (!existing.country && p.country) {
+          existing.country = p.country;
+          existing.countryName = p.countryName || null;
         }
       }
     }
@@ -866,8 +930,8 @@ function tryAggregate() {
   for (const m of matches) {
     const p1 = playerMap.get(m.player1Id);
     const p2 = playerMap.get(m.player2Id);
-    const entry1 = { opponent: p2.name, opponentPlace: m.player2Place, myPlace: m.player1Place, myScore: m.score1, oppScore: m.score2, won: m.player1Won, isChip: m.isChip || false, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
-    const entry2 = { opponent: p1.name, opponentPlace: m.player1Place, myPlace: m.player2Place, myScore: m.score2, oppScore: m.score1, won: !m.player1Won, isChip: m.isChip || false, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
+    const entry1 = { opponent: p2.name, opponentCountry: p2.country || null, opponentCountryName: p2.countryName || null, opponentPlace: m.player2Place, myPlace: m.player1Place, myScore: m.score1, oppScore: m.score2, won: m.player1Won, isChip: m.isChip || false, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
+    const entry2 = { opponent: p1.name, opponentCountry: p1.country || null, opponentCountryName: p1.countryName || null, opponentPlace: m.player1Place, myPlace: m.player2Place, myScore: m.score2, oppScore: m.score1, won: !m.player1Won, isChip: m.isChip || false, matchNumber: m.matchNumber, tournamentName: m.tournamentName };
     if (!playerMatchesMap.has(m.player1Id)) playerMatchesMap.set(m.player1Id, []);
     if (!playerMatchesMap.has(m.player2Id)) playerMatchesMap.set(m.player2Id, []);
     playerMatchesMap.get(m.player1Id).push(entry1);
@@ -879,6 +943,8 @@ function tryAggregate() {
       name: p.name,
       prior: p.skillLevel,
       place: p.place,
+      country: p.country || null,
+      countryName: p.countryName || null,
       optimized: null,
       delta: null,
       matches: playerMatchesMap.get(p.id) || [],
@@ -1865,7 +1931,8 @@ function formatPlace(place) {
 
 function renderMatchLine(m) {
   const oppPlace = m.opponentPlace ? ' (' + formatPlace(m.opponentPlace) + ')' : '';
-  const oppLink = '<span class="match-opponent-link" data-player="' + escapeHtml(m.opponent) + '">' + escapeHtml(m.opponent) + '</span>';
+  const oppFlag = countryFlagHtml(m.opponentCountry, m.opponentCountryName, 'pf');
+  const oppLink = '<span class="match-opponent-link" data-player="' + escapeHtml(m.opponent) + '">' + oppFlag + escapeHtml(m.opponent) + '</span>';
   if (m.isChip) {
     return '<div><span class="match-result"></span><span class="match-score">' + m.myScore + '-' + m.oppScore + '</span> vs ' + oppLink + oppPlace + '</div>';
   }
@@ -1952,7 +2019,7 @@ function renderTable() {
     }
     html += '<tr class="player-row" data-row="' + i + '" data-player-name="' + escapeHtml(r.name) + '">'
       + '<td class="num">' + (i + 1) + '</td>'
-      + '<td class="name-cell">' + escapeHtml(r.name) + '</td>'
+      + '<td class="name-cell">' + playerFlagHtml(r) + escapeHtml(r.name) + '</td>'
       + (multiTournament ? '' : '<td class="num">' + (r.place || '<span class="no-prior">--</span>') + '</td>')
       + '<td class="num">' + priorStr + '</td>'
       + '<td class="num">' + (r.optimized != null ? r.optimized : '<span class="no-prior">\u2026</span>') + '</td>'
@@ -2143,9 +2210,14 @@ function collectSearchablePlayers() {
       if (byName[key].prior == null) byName[key].prior = r.prior;
       if (byName[key].optimized == null) byName[key].optimized = r.optimized;
       if (!byName[key].place) byName[key].place = r.place;
+      if (!byName[key].country && r.country) {
+        byName[key].country = r.country;
+        byName[key].countryName = r.countryName || null;
+      }
       continue;
     }
-    byName[key] = { name: r.name, prior: r.prior, optimized: r.optimized, place: r.place };
+    byName[key] = { name: r.name, prior: r.prior, optimized: r.optimized, place: r.place,
+                    country: r.country || null, countryName: r.countryName || null };
     out.push(byName[key]);
   }
   return out;
@@ -2219,7 +2291,7 @@ function renderSearchResults() {
     if (p.prior != null && p.prior >= 0) meta.push('Off ' + p.prior);
     if (p.place) meta.push(formatPlace(p.place));
     html += '<div class="pse-item' + (i === 0 ? ' active' : '') + '" role="option" data-name="' + escapeHtml(p.name) + '">';
-    html += '<span class="pse-name">' + highlightName(p.name, toks) + '</span>';
+    html += '<span class="pse-name">' + playerFlagHtml(p) + highlightName(p.name, toks) + '</span>';
     if (meta.length) html += '<span class="pse-meta">' + escapeHtml(meta.join(' · ')) + '</span>';
     html += '</div>';
   }

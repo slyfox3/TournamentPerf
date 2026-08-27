@@ -113,6 +113,10 @@
             skillLevel: null,  // WNT publishes no rating; FargoRate fills it in by name
             fargoId: null,
             place: null,
+            // ISO alpha-2, or 'unknown' for unaffiliated entrants. The page
+            // turns this into a flag; no other source publishes a country.
+            country: (p.country && p.country.code) || null,
+            countryName: (p.country && p.country.name) || null,
           });
         }
         return playerMap.get(p.id);
