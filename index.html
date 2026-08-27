@@ -903,8 +903,10 @@ function tryAggregate() {
     navHistory = [];
     updateNavPill();
     updateSearchFab();
+    updateDocTitle();
     return;
   }
+  updateDocTitle();
 
   cachedParsedData = aggregated;
   manualRatings.clear();
@@ -1150,6 +1152,29 @@ function setStatus(msg, type) {
 // =====================================================
 // URL Parameters
 // =====================================================
+// Tab title carries the loaded event, so a window parked on a tournament is
+// identifiable among a row of tabs. The full page name is kept for the landing
+// page but is too long to leave room for a tournament beside it, so the tab
+// uses the short form once something is loaded.
+var BASE_TITLE = document.title;
+var TITLE_PREFIX = 'TournamentPerf';
+
+function updateDocTitle() {
+  var names = [];
+  for (var i = 0; i < slots.length; i++) {
+    var s = slots[i];
+    if (!s.parsed || !s.parsed.players.length) continue;
+    names.push((s.parsed.tournamentInfo && s.parsed.tournamentInfo.name) || ('Tournament ' + (i + 1)));
+  }
+  if (!names.length) {
+    document.title = BASE_TITLE;
+    return;
+  }
+  // Several tournaments can be compared at once, but a tab shows too few
+  // characters for a list, so it names the first and leaves it at that.
+  document.title = TITLE_PREFIX + ' | ' + names[0];
+}
+
 function updateUrlParams() {
   const params = new URLSearchParams();
   for (const s of slots) {
