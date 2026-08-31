@@ -207,13 +207,24 @@
 
       for (var pi = 0; pi < pending.length; pi++) {
         var entry = pending[pi];
-        var filtered = entry.candidates.filter(function(c) {
-          var st = extractState(c.location);
-          return st && knownStates.has(st);
-        });
+        var matched = [];      // state extracted and present in this field
+        var unreadable = 0;    // no state extracted — neither ruled in nor out
 
-        if (filtered.length === 1) {
-          var fc = filtered[0];
+        for (var ci = 0; ci < entry.candidates.length; ci++) {
+          var cand = entry.candidates[ci];
+          var cState = extractState(cand.location);
+          if (!cState) unreadable++;
+          else if (knownStates.has(cState)) matched.push(cand);
+          // else: a state we can read that nobody in this field is from — out.
+        }
+
+        // A location extractState() cannot parse is a country code ("Magalang
+        // PHL"), a foreign locality ("Kaunas 16") or blank. Those are the
+        // players most likely to share a name with a US namesake, so counting
+        // them as eliminated turns a genuine two-way tie into a confident wrong
+        // answer. They only stop being candidates once we can read them.
+        if (matched.length === 1 && unreadable === 0) {
+          var fc = matched[0];
           var fState = extractState(fc.location);
           results.set(entry.name, makeResult(fc));
           if (fState) knownStates.add(fState);
