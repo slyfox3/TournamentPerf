@@ -11,10 +11,35 @@
   // list, not the resolved rating: disambiguation below picks between
   // same-name players using the states present in the current field, and that
   // decision does not transfer to a different tournament.
-  var CACHE_KEY = 'tp_fargo_cache_v1';
+  // v2 added `robustness` to each cached candidate. A v1 entry has no such
+  // field, and reading one back would look like a robustness of 0 and get the
+  // player discarded, so the key change retires the old entries wholesale.
+  var CACHE_KEY = 'tp_fargo_cache_v2';
+  var LEGACY_CACHE_KEYS = ['tp_fargo_cache_v1'];
   var HIT_TTL = 7 * 24 * 3600 * 1000;   // ratings move slowly
   var MISS_TTL = 24 * 3600 * 1000;      // a missing player may get added
   var MAX_ENTRIES = 5000;
+
+  // FargoRate publishes a number for every record it holds, including ones with
+  // no games behind them. Robustness is the rack count that number rests on,
+  // and below a few hundred the rating is a guess the solver would nonetheless
+  // anchor as hard as one built from thousands of racks. The US Open 2026 field
+  // matched a Stephen Fleming to a record carrying robustness 0, and its 203
+  // then sat ~490 points below how he actually played. Identifying a player and
+  // trusting their rating are separate questions, so this one is asked last —
+  // see isRated().
+  var MIN_ROBUSTNESS = 200;
+
+  // The state test below assumes a regional field, where a few states account
+  // for everyone and a candidate from anywhere else is therefore a namesake.
+  // A national open breaks that assumption: with entrants from most of the
+  // country the question "is this state represented?" stops discriminating, and
+  // which candidate it lands on comes down to whichever states happened to
+  // arrive from unique-name players. In the 37-state US Open 2026 field it
+  // picked a 484 in Escondido CA over a 672 in WA for Salvador Garcia on
+  // exactly that basis, off nothing more than CA having turned up already.
+  // Past this many states, leaving the name unrated beats guessing.
+  var MAX_FIELD_STATES = 5;
 
   var memCache = null;
 
@@ -24,6 +49,11 @@
       memCache = JSON.parse(localStorage.getItem(CACHE_KEY)) || {};
     } catch (e) {
       memCache = {};
+    }
+    // A superseded cache is dead weight that still counts against the origin's
+    // quota, which is what makes the setItem() below start throwing.
+    for (var i = 0; i < LEGACY_CACHE_KEYS.length; i++) {
+      try { localStorage.removeItem(LEGACY_CACHE_KEYS[i]); } catch (e) {}
     }
     return memCache;
   }
@@ -65,6 +95,7 @@
           id: c.id,
           effectiveRating: c.effectiveRating,
           rating: c.rating,
+          robustness: c.robustness,
           location: c.location,
         };
       }),
@@ -77,6 +108,82 @@
     var trimmed = location.trim();
     var match = trimmed.match(/\b([A-Z]{2})$/);
     return match ? match[1] : null;
+  }
+
+  // --- name matching -------------------------------------------------------
+  // The index is a fuzzy one and always answers with its nearest neighbours,
+  // so "no such player" and "a stranger who shares some letters" arrive as the
+  // same shape of response. Asking it for "Lin Ta Li" returns "Diem Linh Ta".
+  // Comparing the name back tells the two apart.
+
+  // NFD strips the accents that decompose; these are the letters that do not.
+  var LETTER_FOLD = { 'ø': 'o', 'æ': 'ae', 'ð': 'd', 'þ': 'th',
+                      'ß': 'ss', 'đ': 'd', 'ł': 'l' };
+
+  // "Sam" for Samuel and "Rich" for Richard are the same entrant; "Li" for
+  // "Linh" is not. Three characters is where a prefix stops being a coincidence
+  // — it admits every nickname in the US Open 2026 field and no false match.
+  var NICKNAME_MIN = 3;
+
+  function nameTokens(s) {
+    return String(s || '').toLowerCase()
+      .replace(/[øæðþßđł]/g, function(c) { return LETTER_FOLD[c]; })
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      // Hyphens split, so the index's "Ta-Li Lin" tokenises the same as the
+      // bracket's "Lin Ta Li" and the two compare equal.
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim().split(/\s+/).filter(Boolean);
+  }
+
+  function tokenAlike(a, b) {
+    return a === b
+      || (a.length >= NICKNAME_MIN && b.indexOf(a) === 0)
+      || (b.length >= NICKNAME_MIN && a.indexOf(b) === 0);
+  }
+
+  // Every token of the shorter name must pair with a *distinct* token of the
+  // longer one. Distinctness is what rejects "Diem Linh Ta" for "Lin Ta Li":
+  // "lin" and "li" would both happily claim "linh", but only one may have it,
+  // and nothing is left for the other. Order is ignored throughout, which is
+  // the point — a surname-first bracket entry still matches.
+  function coverable(short, long) {
+    if (short.length === 0) return false;
+    var used = new Array(long.length);
+    function assign(i) {
+      if (i === short.length) return true;
+      for (var j = 0; j < long.length; j++) {
+        if (used[j] || !tokenAlike(short[i], long[j])) continue;
+        used[j] = true;
+        if (assign(i + 1)) return true;
+        used[j] = false;
+      }
+      return false;
+    }
+    return assign(0);
+  }
+
+  function matchesName(tokens, c) {
+    var ct = nameTokens((c.firstName || '') + ' ' + (c.lastName || ''));
+    return tokens.length <= ct.length ? coverable(tokens, ct) : coverable(ct, tokens);
+  }
+
+  // Spellings to fall back to when the index cannot match a name as written.
+  // Measured against the live index over the eight surname-first entrants in
+  // the US Open 2026 field: moving the last token to the front found seven of
+  // them, moving the first token to the back found the eighth, and the two
+  // hyphenated spellings found none. "Ta-Li Lin" returns nothing for a player
+  // the index stores as exactly "Ta-Li Lin", so hyphenating is not worth a
+  // request; the hyphens matter when comparing names, not when asking.
+  function nameVariants(name) {
+    var t = String(name).trim().split(/\s+/);
+    if (t.length < 2) return [];
+    var out = [];
+    var rotRight = [t[t.length - 1]].concat(t.slice(0, -1)).join(' ');
+    var rotLeft = t.slice(1).concat([t[0]]).join(' ');
+    if (rotRight !== name) out.push(rotRight);
+    // Identical to rotRight for a two-token name; one request, not two.
+    if (rotLeft !== name && rotLeft !== rotRight) out.push(rotLeft);
+    return out;
   }
 
   function fetchOne(name) {
@@ -96,6 +203,15 @@
       // Do not cache failures — a transient network error is not a "no such
       // player", and caching it would suppress the retry.
       .catch(function() { return { name: name, value: [] , error: true }; });
+  }
+
+  // Asked last, once the field has been narrowed to a single person. A thin
+  // record is still a candidate while we are working out *who* this is —
+  // discarding it earlier would let a genuine two-way tie masquerade as a
+  // clean single match and resolve with false confidence — and only when one
+  // candidate is left do we ask whether its rating is worth anchoring on.
+  function isRated(c) {
+    return (parseInt(c.robustness, 10) || 0) >= MIN_ROBUSTNESS;
   }
 
   function makeResult(c) {
@@ -140,26 +256,68 @@
     var pending = []; // for disambiguation
     var knownStates = new Set();
 
-    function classifyResponse(resp) {
-      var candidates = resp.value;
-      if (candidates.length === 0) {
-        results.set(resp.name, null);
-      } else if (candidates.length === 1) {
-        var c = candidates[0];
-        var state = extractState(c.location);
-        results.set(resp.name, makeResult(c));
-        if (state) knownStates.add(state);
+    // The candidates worth considering for `name`: everyone actually bearing
+    // that name, thin records included. Robustness is not asked about here —
+    // see resolveTo().
+    function poolFor(name, value) {
+      var tokens = nameTokens(name);
+      return value.filter(function(c) { return matchesName(tokens, c); });
+    }
+
+    // One candidate left, so this is the person. The state goes into the field
+    // regardless of what happens to the rating: it says where an entrant is
+    // from, which is still true of a player whose rating we decline to use.
+    function resolveTo(name, c) {
+      var state = extractState(c.location);
+      if (state) knownStates.add(state);
+      results.set(name, isRated(c) ? makeResult(c) : null);
+    }
+
+    function place(name, pool) {
+      if (pool.length === 1) {
+        resolveTo(name, pool[0]);
+      } else if (pool.length > 1) {
+        pending.push({ name: name, candidates: pool });
       } else {
-        pending.push({ name: resp.name, candidates: candidates });
+        results.set(name, null);
       }
     }
 
+    function fetchCached(name) {
+      var hit = cacheGet(name);
+      if (hit) return Promise.resolve({ name: name, value: hit });
+      return fetchOne(name);
+    }
+
+    // One player, however many requests that takes: the name as the bracket
+    // spells it, then the reordered spellings from nameVariants() if the index
+    // could not match it. Counting a player done only once this resolves keeps
+    // the progress bar honest — a name that needs three requests takes three
+    // requests' worth of the bar.
+    async function resolveOne(name) {
+      var resp = await fetchCached(name);
+      var pool = poolFor(name, resp.value);
+
+      var variants = nameVariants(name);
+      for (var vi = 0; pool.length === 0 && vi < variants.length; vi++) {
+        var alt = await fetchCached(variants[vi]);
+        pool = poolFor(name, alt.value);
+      }
+      // Carries the name back rather than closing over it: the caller's loop
+      // reassigns its `name` before this settles.
+      return { name: name, pool: pool };
+    }
+
     // Serve whatever the cache already holds before opening any connections.
+    // A cached response that yields no pool is not finished with — the variant
+    // spellings still have to be tried — so it goes down the async path, where
+    // fetchCached() will replay it from the cache for free.
     var toFetch = [];
     for (var i = 0; i < names.length; i++) {
       var cached = cacheGet(names[i]);
-      if (cached) {
-        classifyResponse({ name: names[i], value: cached });
+      var cachedPool = cached ? poolFor(names[i], cached) : [];
+      if (cachedPool.length > 0) {
+        place(names[i], cachedPool);
         done++;
       } else {
         toFetch.push(names[i]);
@@ -181,8 +339,8 @@
           while (inFlight < concurrency && nextIndex < toFetch.length) {
             var name = toFetch[nextIndex++];
             inFlight++;
-            fetchOne(name).then(function(resp) {
-              classifyResponse(resp);
+            resolveOne(name).then(function(r) {
+              place(r.name, r.pool);
               done++;
               inFlight--;
               if (onProgress) onProgress(done, total, results);
@@ -199,9 +357,12 @@
       });
     }
 
-    // Disambiguation passes
+    // Disambiguation passes. Checked per pass rather than once up front because
+    // each resolution can itself widen the field: a run that starts inside
+    // MAX_FIELD_STATES and grows past it has to stop there, not coast on the
+    // count it began with. Names still pending fall through to null below.
     var changed = true;
-    while (changed && pending.length > 0) {
+    while (changed && pending.length > 0 && knownStates.size <= MAX_FIELD_STATES) {
       changed = false;
       var stillPending = [];
 
@@ -224,10 +385,7 @@
         // them as eliminated turns a genuine two-way tie into a confident wrong
         // answer. They only stop being candidates once we can read them.
         if (matched.length === 1 && unreadable === 0) {
-          var fc = matched[0];
-          var fState = extractState(fc.location);
-          results.set(entry.name, makeResult(fc));
-          if (fState) knownStates.add(fState);
+          resolveTo(entry.name, matched[0]);
           changed = true;
         } else {
           stillPending.push(entry);
